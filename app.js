@@ -4,11 +4,15 @@
 // router, sin Context/Redux (estado por props desde AppShell).
 // Requiere que firebase-config.js y permissions.js se hayan cargado
 // antes (dejan auth, db, ROLES, PERMISSIONS, etc. como globales).
+//
+// Jerarquía académica: Carrera -> Curso (ej: "Pastelería 1er Curso") ->
+// Clase (Curso + Turno + Día + Docente, recurrente semanal). Los Alumnos
+// se inscriben en un Curso + Turno.
 // =====================================================================
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.1.0';
+const APP_VERSION = '0.2.0';
 
 const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
@@ -28,6 +32,36 @@ function inputWeekFromDate(dateStr) {
   const dayNum = Math.floor((d - jan1) / 86400000);
   const week = Math.ceil((dayNum + jan1.getDay() + 1) / 7);
   return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+// Redimensiona/comprime una imagen en el navegador (canvas) y la devuelve
+// como base64, sin usar Firebase Storage (se guarda como texto en
+// Firestore, ver config/branding). Alcanza para un logo, no para fotos
+// de alta resolución.
+function resizeImageToBase64(file, maxWidth) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = Math.round(height * (maxWidth / width));
+          width = maxWidth;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -57,6 +91,20 @@ function useCollection(path, queryFn, deps) {
   }, deps || [path]);
 
   return [data, loading];
+}
+
+// Logo del instituto (config/branding). Lectura pública en las reglas,
+// así se puede mostrar hasta en la pantalla de login.
+function useBranding() {
+  const [logo, setLogo] = useState(null);
+  useEffect(() => {
+    const unsub = db.collection('config').doc('branding').onSnapshot(
+      (snap) => setLogo(snap.exists ? snap.data().logoBase64 || null : null),
+      () => setLogo(null)
+    );
+    return unsub;
+  }, []);
+  return logo;
 }
 
 // ---------------------------------------------------------------------
@@ -130,9 +178,10 @@ function renderCellValue(val, field) {
 
 // ---------------------------------------------------------------------
 // CrudTable: tabla + modal de alta/edición genérico para colecciones
-// "catálogo" simples (carreras, turnos, docentes, alumnos, ingredientes,
-// clases). filterFn es opcional y solo acota qué se MUESTRA en pantalla
-// (no reemplaza las reglas de seguridad reales, que viven en Firestore).
+// "catálogo" simples (carreras, cursos, turnos, docentes, alumnos,
+// ingredientes, clases). filterFn es opcional y solo acota qué se
+// MUESTRA en pantalla (no reemplaza las reglas de seguridad reales,
+// que viven en Firestore).
 // ---------------------------------------------------------------------
 function CrudTable({ title, collectionName, fields, role, extraDefault, filterFn }) {
   const [items, loading] = useCollection(collectionName, null, [collectionName]);
@@ -248,6 +297,18 @@ function CarrerasView({ role }) {
   return <CrudTable title="Carreras" collectionName="carreras" fields={fields} role={role} extraDefault={{ activo: true }} />;
 }
 
+// Curso = nivel/año dentro de una Carrera. Ej: Carrera "Pastelería" ->
+// Cursos "1er Curso", "2do Curso".
+function CursosView({ role }) {
+  const [carreras] = useCollection('carreras', null, []);
+  const fields = [
+    { key: 'nombre', label: 'Nombre (ej: 1er Curso)', type: 'text', required: true },
+    { key: 'carreraId', label: 'Carrera', type: 'select', options: carreras.map((c) => ({ value: c.id, label: c.nombre })) },
+    { key: 'activo', label: 'Activo', type: 'checkbox' },
+  ];
+  return <CrudTable title="Cursos" collectionName="cursos" fields={fields} role={role} extraDefault={{ activo: true }} />;
+}
+
 function TurnosView({ role }) {
   const fields = [
     { key: 'nombre', label: 'Nombre (ej: Mañana)', type: 'text', required: true },
@@ -283,8 +344,10 @@ function IngredientesView({ role }) {
   return <CrudTable title="Ingredientes" collectionName="ingredientes" fields={fields} role={role} />;
 }
 
+// Clase = Curso + Turno + Día + Docente, recurrente semana a semana.
 function ClasesView({ role, usuario }) {
   const [carreras] = useCollection('carreras', null, []);
+  const [cursos] = useCollection('cursos', null, []);
   const [turnos] = useCollection('turnos', null, []);
   const [docentes] = useCollection('docentes', null, []);
   const [misInscripciones] = useCollection(
@@ -293,9 +356,14 @@ function ClasesView({ role, usuario }) {
     [role, usuario.alumnoId]
   );
 
+  const nombreCurso = (curso) => {
+    const carrera = carreras.find((c) => c.id === curso.carreraId);
+    return carrera ? `${carrera.nombre} - ${curso.nombre}` : curso.nombre;
+  };
+
   const fields = [
     { key: 'nombre', label: 'Nombre de la clase', type: 'text', required: true },
-    { key: 'carreraId', label: 'Carrera', type: 'select', options: carreras.map((c) => ({ value: c.id, label: c.nombre })) },
+    { key: 'cursoId', label: 'Curso', type: 'select', options: cursos.map((c) => ({ value: c.id, label: nombreCurso(c) })) },
     { key: 'turnoId', label: 'Turno', type: 'select', options: turnos.map((t) => ({ value: t.id, label: t.nombre })) },
     { key: 'diaSemana', label: 'Día', type: 'select', options: DIAS_SEMANA.map((d) => ({ value: d, label: d })) },
     { key: 'docenteId', label: 'Docente', type: 'select', options: docentes.map((d) => ({ value: d.id, label: d.nombre })) },
@@ -305,34 +373,40 @@ function ClasesView({ role, usuario }) {
   let filterFn = null;
   if (role === ROLES.DOCENTE) filterFn = (c) => c.docenteId === usuario.docenteId;
   if (role === ROLES.ALUMNO) {
-    const combos = misInscripciones.map((i) => `${i.carreraId}_${i.turnoId}`);
-    filterFn = (c) => combos.includes(`${c.carreraId}_${c.turnoId}`);
+    const combos = misInscripciones.map((i) => `${i.cursoId}_${i.turnoId}`);
+    filterFn = (c) => combos.includes(`${c.cursoId}_${c.turnoId}`);
   }
 
   return <CrudTable title="Clases" collectionName="clases" fields={fields} role={role} extraDefault={{ activo: true }} filterFn={filterFn} />;
 }
 
 // ---------------------------------------------------------------------
-// Inscripciones (Alumno + Carrera + Turno) - vista a medida
+// Inscripciones (Alumno + Curso + Turno) - vista a medida
 // ---------------------------------------------------------------------
 function InscripcionesView({ role }) {
   const [inscripciones] = useCollection('inscripciones', null, []);
   const [alumnos] = useCollection('alumnos', null, []);
   const [carreras] = useCollection('carreras', null, []);
+  const [cursos] = useCollection('cursos', null, []);
   const [turnos] = useCollection('turnos', null, []);
-  const [form, setForm] = useState({ alumnoId: '', carreraId: '', turnoId: '' });
+  const [form, setForm] = useState({ alumnoId: '', cursoId: '', turnoId: '' });
   const puedeEscribir = canWrite('inscripciones', role);
 
   const nombreAlumno = (id) => (alumnos.find((a) => a.id === id) || {}).nombre || id;
-  const nombreCarrera = (id) => (carreras.find((c) => c.id === id) || {}).nombre || id;
+  const nombreCurso = (id) => {
+    const curso = cursos.find((c) => c.id === id);
+    if (!curso) return id;
+    const carrera = carreras.find((c) => c.id === curso.carreraId);
+    return carrera ? `${carrera.nombre} - ${curso.nombre}` : curso.nombre;
+  };
   const nombreTurno = (id) => (turnos.find((t) => t.id === id) || {}).nombre || id;
 
   async function inscribir(e) {
     e.preventDefault();
-    if (!form.alumnoId || !form.carreraId || !form.turnoId) return alert('Completá los tres campos.');
+    if (!form.alumnoId || !form.cursoId || !form.turnoId) return alert('Completá los tres campos.');
     try {
       await db.collection('inscripciones').add({ ...form, activo: true, fechaAlta: firebase.firestore.FieldValue.serverTimestamp() });
-      setForm({ alumnoId: '', carreraId: '', turnoId: '' });
+      setForm({ alumnoId: '', cursoId: '', turnoId: '' });
     } catch (err) {
       alert('Error: ' + err.message);
     }
@@ -355,9 +429,9 @@ function InscripcionesView({ role }) {
             <option value="">Alumno...</option>
             {alumnos.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
           </select>
-          <select value={form.carreraId} onChange={(e) => setForm({ ...form, carreraId: e.target.value })}>
-            <option value="">Carrera...</option>
-            {carreras.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          <select value={form.cursoId} onChange={(e) => setForm({ ...form, cursoId: e.target.value })}>
+            <option value="">Curso...</option>
+            {cursos.map((c) => <option key={c.id} value={c.id}>{nombreCurso(c.id)}</option>)}
           </select>
           <select value={form.turnoId} onChange={(e) => setForm({ ...form, turnoId: e.target.value })}>
             <option value="">Turno...</option>
@@ -369,13 +443,13 @@ function InscripcionesView({ role }) {
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th>Alumno</th><th>Carrera</th><th>Turno</th><th>Activo</th>{puedeEscribir && <th>Acciones</th>}</tr>
+            <tr><th>Alumno</th><th>Curso</th><th>Turno</th><th>Activo</th>{puedeEscribir && <th>Acciones</th>}</tr>
           </thead>
           <tbody>
             {inscripciones.map((i) => (
               <tr key={i.id}>
                 <td>{nombreAlumno(i.alumnoId)}</td>
-                <td>{nombreCarrera(i.carreraId)}</td>
+                <td>{nombreCurso(i.cursoId)}</td>
                 <td>{nombreTurno(i.turnoId)}</td>
                 <td>{i.activo ? 'Sí' : 'No'}</td>
                 {puedeEscribir && (
@@ -544,7 +618,7 @@ function PlanificacionView({ usuario, role }) {
     const gruposLimpios = grupos.filter((g) => g.recetaId);
     try {
       await db.collection('planificaciones').doc(docId).set({
-        claseId, semanaId: semana, docenteId: clase.docenteId, carreraId: clase.carreraId,
+        claseId, semanaId: semana, docenteId: clase.docenteId, cursoId: clase.cursoId,
         grupos: gruposLimpios,
         actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
       });
@@ -593,8 +667,10 @@ function PlanificacionView({ usuario, role }) {
 // Lista de compras semanal: agrega ingredientes de todas las
 // planificaciones de la semana. Se genera/regenera a demanda (no hay
 // Cloud Functions), y se guarda como snapshot en listasCompra/{semanaId}.
+// Incluye vista imprimible (con logo) para llevar en papel a compras.
 // ---------------------------------------------------------------------
 function ComprasView({ role }) {
+  const logo = useBranding();
   const [semana, setSemana] = useState(getSemanaActualInputValue());
   const [lista, setLista] = useState(null);
   const [generando, setGenerando] = useState(false);
@@ -670,8 +746,16 @@ function ComprasView({ role }) {
 
   return (
     <div className="view">
-      <h2>Lista de compras semanal</h2>
-      <div className="filters">
+      <div className="print-header">
+        {logo && <img src={logo} alt="IGA" />}
+        <div>
+          <h2>Lista de compras — Semana {semana}</h2>
+          <p className="muted">Instituto Gastronómico de las Américas</p>
+        </div>
+      </div>
+
+      <h2 className="no-print">Lista de compras semanal</h2>
+      <div className="filters no-print">
         <label>Semana<input type="week" value={semana} onChange={(e) => setSemana(e.target.value)} /></label>
         {puedeGenerar && (
           <button className="btn btn-primary" onClick={generar} disabled={generando} type="button">
@@ -679,7 +763,10 @@ function ComprasView({ role }) {
           </button>
         )}
         {lista && lista.detalle && lista.detalle.length > 0 && (
-          <button className="btn" onClick={exportarExcel} type="button">Exportar a Excel</button>
+          <React.Fragment>
+            <button className="btn" onClick={exportarExcel} type="button">Exportar a Excel</button>
+            <button className="btn" onClick={() => window.print()} type="button">Imprimir</button>
+          </React.Fragment>
         )}
       </div>
 
@@ -726,7 +813,7 @@ function AsistenciaView({ usuario, role }) {
     const clase = clases.find((c) => c.id === claseId);
     if (!clase) return;
     db.collection('inscripciones')
-      .where('carreraId', '==', clase.carreraId).where('turnoId', '==', clase.turnoId).where('activo', '==', true)
+      .where('cursoId', '==', clase.cursoId).where('turnoId', '==', clase.turnoId).where('activo', '==', true)
       .get()
       .then((snap) => {
         const insc = snap.docs.map((d) => d.data());
@@ -800,7 +887,7 @@ function AsistenciaView({ usuario, role }) {
                   <td><input type="checkbox" checked={!!presentes[al.id]} onChange={(e) => setPresentes({ ...presentes, [al.id]: e.target.checked })} /></td>
                 </tr>
               ))}
-              {alumnosClase.length === 0 && <tr><td colSpan={2} className="empty">No hay alumnos inscriptos en esta carrera/turno.</td></tr>}
+              {alumnosClase.length === 0 && <tr><td colSpan={2} className="empty">No hay alumnos inscriptos en este curso/turno.</td></tr>}
             </tbody>
           </table>
           {alumnosClase.length > 0 && <button className="btn btn-primary" onClick={guardarAsistencia} type="button">Guardar asistencia</button>}
@@ -834,7 +921,7 @@ function NotasView({ usuario, role }) {
     const clase = clases.find((c) => c.id === claseId);
     if (!clase) return;
     db.collection('inscripciones')
-      .where('carreraId', '==', clase.carreraId).where('turnoId', '==', clase.turnoId).where('activo', '==', true)
+      .where('cursoId', '==', clase.cursoId).where('turnoId', '==', clase.turnoId).where('activo', '==', true)
       .get()
       .then((snap) => {
         const insc = snap.docs.map((d) => d.data());
@@ -910,7 +997,7 @@ function NotasView({ usuario, role }) {
                     <td><input type="number" min="0" max="10" step="0.1" value={valores[al.id] || ''} onChange={(e) => setValores({ ...valores, [al.id]: e.target.value })} /></td>
                   </tr>
                 ))}
-                {alumnosClase.length === 0 && <tr><td colSpan={2} className="empty">No hay alumnos inscriptos en esta carrera/turno.</td></tr>}
+                {alumnosClase.length === 0 && <tr><td colSpan={2} className="empty">No hay alumnos inscriptos en este curso/turno.</td></tr>}
               </tbody>
             </table>
             {alumnosClase.length > 0 && <button className="btn btn-primary" onClick={guardarNotas} type="button">Guardar notas</button>}
@@ -1039,6 +1126,56 @@ function UsuariosView() {
 }
 
 // ---------------------------------------------------------------------
+// Configuración: logo del instituto (config/branding). Se guarda como
+// base64 en Firestore, redimensionado por canvas en el navegador (sin
+// Firebase Storage). Se usa en login, sidebar, y encabezado imprimible.
+// ---------------------------------------------------------------------
+function ConfiguracionView() {
+  const logo = useBranding();
+  const [subiendo, setSubiendo] = useState(false);
+
+  async function onFileChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { alert('Elegí un archivo de imagen (PNG, JPG, etc).'); return; }
+    setSubiendo(true);
+    try {
+      const base64 = await resizeImageToBase64(file, 500);
+      await db.collection('config').doc('branding').set({
+        logoBase64: base64, actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (err) {
+      alert('Error al subir el logo: ' + err.message);
+    }
+    setSubiendo(false);
+    e.target.value = '';
+  }
+
+  async function quitarLogo() {
+    if (!confirm('¿Quitar el logo actual?')) return;
+    try {
+      await db.collection('config').doc('branding').set({ logoBase64: null });
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  return (
+    <div className="view">
+      <h2>Configuración</h2>
+      <div className="card branding-card">
+        <h3>Logo del instituto</h3>
+        <p className="muted">Se usa en el login, el menú lateral, y en el encabezado de la lista de compras cuando se imprime — así queda listo para presentaciones e impresiones sin tener que pegarlo a mano cada vez.</p>
+        {logo && <img src={logo} alt="Logo IGA" className="branding-preview" />}
+        <input type="file" accept="image/*" onChange={onFileChange} disabled={subiendo} />
+        {subiendo && <p className="muted">Subiendo...</p>}
+        {logo && <button className="btn" onClick={quitarLogo} type="button">Quitar logo</button>}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------------
 function DashboardView({ usuario }) {
@@ -1064,6 +1201,7 @@ function DashboardView({ usuario }) {
 // Login
 // ---------------------------------------------------------------------
 function LoginScreen() {
+  const logo = useBranding();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -1093,7 +1231,7 @@ function LoginScreen() {
   return (
     <div className="login-screen">
       <form className="login-card" onSubmit={entrar}>
-        <h1>IGA</h1>
+        {logo ? <img src={logo} alt="IGA" className="login-logo" /> : <h1>IGA</h1>}
         <p className="muted">Administración de Cocina</p>
         <label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
         <label>Contraseña<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
@@ -1113,6 +1251,7 @@ function VistaActual({ vista, usuario }) {
   switch (vista) {
     case 'dashboard': return <DashboardView usuario={usuario} />;
     case 'carreras': return <CarrerasView role={role} />;
+    case 'cursos': return <CursosView role={role} />;
     case 'turnos': return <TurnosView role={role} />;
     case 'docentes': return <DocentesView role={role} />;
     case 'alumnos': return <AlumnosView role={role} />;
@@ -1125,11 +1264,13 @@ function VistaActual({ vista, usuario }) {
     case 'asistencia': return <AsistenciaView role={role} usuario={usuario} />;
     case 'notas': return <NotasView role={role} usuario={usuario} />;
     case 'usuarios': return <UsuariosView />;
+    case 'configuracion': return <ConfiguracionView />;
     default: return <DashboardView usuario={usuario} />;
   }
 }
 
 function AppShell() {
+  const logo = useBranding();
   const [authUser, setAuthUser] = useState(undefined);
   const [usuario, setUsuario] = useState(null);
   const [vista, setVista] = useState('dashboard');
@@ -1176,7 +1317,9 @@ function AppShell() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="sidebar-brand">IGA</div>
+        <div className="sidebar-brand">
+          {logo ? <img src={logo} alt="IGA" className="sidebar-logo" /> : 'IGA'}
+        </div>
         <nav>
           {items.map((item) => (
             <button key={item.key} className={`nav-item ${vista === item.key ? 'active' : ''}`} onClick={() => setVista(item.key)} type="button">

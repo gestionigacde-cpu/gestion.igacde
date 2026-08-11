@@ -23,6 +23,7 @@ const ROLE_LABELS = {
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Inicio', roles: [ROLES.ADMIN, ROLES.DOCENTE, ROLES.ALUMNO, ROLES.COMPRAS] },
   { key: 'carreras', label: 'Carreras', roles: [ROLES.ADMIN] },
+  { key: 'cursos', label: 'Cursos', roles: [ROLES.ADMIN] },
   { key: 'turnos', label: 'Turnos', roles: [ROLES.ADMIN] },
   { key: 'docentes', label: 'Docentes', roles: [ROLES.ADMIN] },
   { key: 'alumnos', label: 'Alumnos', roles: [ROLES.ADMIN] },
@@ -35,12 +36,14 @@ const NAV_ITEMS = [
   { key: 'asistencia', label: 'Asistencia', roles: [ROLES.ADMIN, ROLES.DOCENTE, ROLES.ALUMNO] },
   { key: 'notas', label: 'Notas', roles: [ROLES.ADMIN, ROLES.DOCENTE, ROLES.ALUMNO] },
   { key: 'usuarios', label: 'Usuarios', roles: [ROLES.ADMIN] },
+  { key: 'configuracion', label: 'Configuración', roles: [ROLES.ADMIN] },
 ];
 
 // Permisos de escritura por colección/acción (para ocultar botones de
 // crear/editar/borrar). Debe reflejar firestore.rules.
 const PERMISSIONS = {
   carreras: { write: [ROLES.ADMIN] },
+  cursos: { write: [ROLES.ADMIN] },
   turnos: { write: [ROLES.ADMIN] },
   docentes: { write: [ROLES.ADMIN] },
   alumnos: { write: [ROLES.ADMIN] },
@@ -53,6 +56,7 @@ const PERMISSIONS = {
   asistencias: { write: [ROLES.ADMIN, ROLES.DOCENTE] },
   notas: { write: [ROLES.ADMIN, ROLES.DOCENTE] },
   usuarios: { write: [ROLES.ADMIN] },
+  config: { write: [ROLES.ADMIN] },
 };
 
 function getNavItemsForRole(rol) {

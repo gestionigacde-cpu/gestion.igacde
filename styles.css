@@ -54,6 +54,14 @@ h1, h2, h3 { margin: 0 0 8px; }
 
 .login-card label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9em; }
 
+.login-logo {
+  max-width: 180px;
+  max-height: 100px;
+  object-fit: contain;
+  align-self: center;
+  margin-bottom: 4px;
+}
+
 /* ---------- Layout general ---------- */
 .app-shell {
   display: flex;
@@ -75,6 +83,14 @@ h1, h2, h3 { margin: 0 0 8px; }
   font-size: 1.4em;
   padding: 0 20px 16px;
   letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+}
+
+.sidebar-logo {
+  max-width: 160px;
+  max-height: 64px;
+  object-fit: contain;
 }
 
 .sidebar nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
@@ -283,6 +299,19 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .card-actions { display: flex; gap: 10px; margin-top: 8px; }
 
+/* ---------- Configuración / branding ---------- */
+.branding-card { max-width: 460px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+
+.branding-preview {
+  max-width: 240px;
+  max-height: 140px;
+  object-fit: contain;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 8px;
+  background: #fff;
+}
+
 /* ---------- Editores de ingredientes / grupos ---------- */
 .ingredientes-editor, .grupos-editor {
   border-top: 1px solid var(--color-border);
@@ -312,3 +341,22 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
 .loading-full { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+
+/* ---------- Impresión (ej: lista de compras) ---------- */
+.print-header {
+  display: none;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.print-header img { max-height: 70px; max-width: 200px; object-fit: contain; }
+
+@media print {
+  .sidebar, .no-print { display: none !important; }
+  .app-shell { display: block; }
+  .content { padding: 0; overflow: visible; }
+  .print-header { display: flex !important; }
+  .table-wrap { border: none; }
+  body { background: #fff; }
+}
