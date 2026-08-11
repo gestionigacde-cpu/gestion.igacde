@@ -16,7 +16,7 @@ de Firebase).
 - `firebase-config.js` — credenciales del proyecto Firebase.
 - `permissions.js` — roles y matriz de permisos (solo UX).
 - `app.js` — toda la app (componentes React, lógica, pantallas).
-- `styles.css` — estilos (incluye vista de impresión).
+- `styles.css` — estilos (incluye vista de impresión y buscador con autocompletado).
 - `firestore.rules` — reglas de seguridad reales (se publican en Firebase Console).
 - `CHANGELOG.md` — historial de versiones.
 
@@ -85,7 +85,7 @@ Si te saltás este paso, el login funciona en local pero falla en producción.
 
 1. Admin carga catálogos: Carreras, Cursos (por carrera), Turnos, Docentes, Alumnos, Ingredientes, Recetas (con sus ingredientes y cantidades).
 2. Admin define las Clases (Curso + Turno + Día + Docente, recurrente semana a semana).
-3. Admin inscribe Alumnos en Curso + Turno (un alumno puede tener varias inscripciones).
+3. Admin inscribe Alumnos en Curso + Turno (un alumno puede tener varias inscripciones), buscándolos por nombre con el campo de autocompletado.
 4. Cada semana, el Docente (o Admin) entra a "Planificación semanal", elige su Clase y la semana, define cuántos Grupos hay y qué Receta prepara cada uno.
 5. Admin entra a "Lista de compras", elige la semana, y genera la lista: el sistema suma los ingredientes de todas las recetas planificadas esa semana en todas las clases, en una única lista. Se puede exportar a Excel o imprimir (con el logo del instituto en el encabezado).
 6. El rol Compras entra con su propio usuario y ve/exporta esa lista (no genera ni edita catálogos).

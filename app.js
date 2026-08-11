@@ -12,7 +12,7 @@
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.2.1';
 
 const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
@@ -124,6 +124,67 @@ function Modal({ title, onClose, children, wide }) {
         </div>
         <div className="modal-body">{children}</div>
       </div>
+    </div>
+  );
+}
+
+// Select con búsqueda por texto (filtra a medida que se escribe). Pensado
+// para listas que pueden crecer mucho (ej: Alumnos) donde un <select>
+// tradicional se vuelve difícil de usar.
+function AutocompleteSelect({ options, value, onChange, placeholder }) {
+  const selected = options.find((o) => o.value === value);
+  const [query, setQuery] = useState(selected ? selected.label : '');
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const match = options.find((o) => o.value === value);
+    setQuery(match ? match.label : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  const filtered = query.trim() === ''
+    ? options
+    : options.filter((o) => o.label.toLowerCase().includes(query.trim().toLowerCase()));
+
+  function elegir(opt) {
+    onChange(opt.value);
+    setQuery(opt.label);
+    setOpen(false);
+  }
+
+  function handleChange(e) {
+    setQuery(e.target.value);
+    setOpen(true);
+    if (value) onChange('');
+  }
+
+  function handleBlur() {
+    setOpen(false);
+    const stillValid = options.find((o) => o.label === query);
+    if (!stillValid) {
+      const match = options.find((o) => o.value === value);
+      setQuery(match ? match.label : '');
+    }
+  }
+
+  return (
+    <div className="autocomplete">
+      <input
+        type="text"
+        value={query}
+        placeholder={placeholder || 'Escribí para buscar...'}
+        onChange={handleChange}
+        onFocus={() => setOpen(true)}
+        onBlur={handleBlur}
+      />
+      {open && (
+        <div className="autocomplete-menu" onMouseDown={(e) => e.preventDefault()}>
+          {filtered.length === 0 && <div className="autocomplete-empty">Sin resultados</div>}
+          {filtered.slice(0, 50).map((o) => (
+            <div key={o.value} className="autocomplete-option" onClick={() => elegir(o)}>{o.label}</div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -330,7 +391,7 @@ function AlumnosView({ role }) {
   const fields = [
     { key: 'nombre', label: 'Nombre', type: 'text', required: true },
     { key: 'email', label: 'Email', type: 'text' },
-    { key: 'dni', label: 'DNI', type: 'text' },
+    { key: 'documento', label: 'Documento', type: 'text' },
     { key: 'activo', label: 'Activo', type: 'checkbox' },
   ];
   return <CrudTable title="Alumnos" collectionName="alumnos" fields={fields} role={role} extraDefault={{ activo: true }} />;
@@ -392,6 +453,11 @@ function InscripcionesView({ role }) {
   const [form, setForm] = useState({ alumnoId: '', cursoId: '', turnoId: '' });
   const puedeEscribir = canWrite('inscripciones', role);
 
+  const alumnoOptions = alumnos
+    .slice()
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''))
+    .map((a) => ({ value: a.id, label: a.documento ? `${a.nombre} (${a.documento})` : a.nombre }));
+
   const nombreAlumno = (id) => (alumnos.find((a) => a.id === id) || {}).nombre || id;
   const nombreCurso = (id) => {
     const curso = cursos.find((c) => c.id === id);
@@ -425,10 +491,12 @@ function InscripcionesView({ role }) {
       <h2>Inscripciones</h2>
       {puedeEscribir && (
         <form className="form form-inline" onSubmit={inscribir}>
-          <select value={form.alumnoId} onChange={(e) => setForm({ ...form, alumnoId: e.target.value })}>
-            <option value="">Alumno...</option>
-            {alumnos.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-          </select>
+          <AutocompleteSelect
+            options={alumnoOptions}
+            value={form.alumnoId}
+            onChange={(v) => setForm({ ...form, alumnoId: v })}
+            placeholder="Buscar alumno..."
+          />
           <select value={form.cursoId} onChange={(e) => setForm({ ...form, cursoId: e.target.value })}>
             <option value="">Curso...</option>
             {cursos.map((c) => <option key={c.id} value={c.id}>{nombreCurso(c.id)}</option>)}
@@ -1033,6 +1101,11 @@ function UsuariosView() {
   const [form, setForm] = useState({ nombre: '', email: '', password: '', rol: ROLES.DOCENTE, docenteId: '', alumnoId: '' });
   const [creando, setCreando] = useState(false);
 
+  const alumnoOptions = alumnos
+    .slice()
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''))
+    .map((a) => ({ value: a.id, label: a.documento ? `${a.nombre} (${a.documento})` : a.nombre }));
+
   async function crearUsuario(e) {
     e.preventDefault();
     setCreando(true);
@@ -1108,10 +1181,12 @@ function UsuariosView() {
             )}
             {form.rol === ROLES.ALUMNO && (
               <label>Ficha de alumno vinculada
-                <select value={form.alumnoId} onChange={(e) => setForm({ ...form, alumnoId: e.target.value })}>
-                  <option value="">Elegir...</option>
-                  {alumnos.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-                </select>
+                <AutocompleteSelect
+                  options={alumnoOptions}
+                  value={form.alumnoId}
+                  onChange={(v) => setForm({ ...form, alumnoId: v })}
+                  placeholder="Buscar alumno..."
+                />
               </label>
             )}
             <div className="form-actions">

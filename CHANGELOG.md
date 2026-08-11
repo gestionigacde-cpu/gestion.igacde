@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.1 - Buscador de alumnos + campo Documento
+- El campo "DNI" de Alumnos pasó a llamarse **Documento**.
+- Nuevo componente `AutocompleteSelect`: campo de texto que filtra a medida que se escribe, en vez de un `<select>` tradicional. Se usa para elegir Alumno en **Inscripciones** y en **Usuarios** (al vincular una ficha de alumno a un login) — pensado para cuando haya muchos alumnos cargados.
+- No requiere cambios en `firestore.rules` (no se tocó el modelo de datos, solo el nombre del campo y la UI).
+
+### Nota sobre el cambio de DNI a Documento
+Los alumnos que ya hayas cargado con la versión anterior tienen el dato guardado bajo el campo viejo (`dni`) y van a aparecer con "Documento" vacío. Hay que volver a abrirlos y cargar el valor en el campo nuevo una vez (no se pierde ningún otro dato).
+
 ## v0.2.0 - Cursos + Logo/Branding + Impresión
 - Nueva entidad **Cursos**: cada Carrera tiene uno o más Cursos (ej: "Pastelería 1er Curso"). Las Clases ahora se arman sobre Curso + Turno + Día + Docente, y las Inscripciones son Alumno + Curso + Turno (antes era directo sobre Carrera).
 - Nuevo módulo **Configuración** (solo Admin): subir el logo del instituto. Se redimensiona/comprime en el navegador (canvas) y se guarda como base64 en `config/branding` — sin Firebase Storage.
