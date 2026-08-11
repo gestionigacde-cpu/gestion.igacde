@@ -1,0 +1,178 @@
+rules_version = '2';
+
+// =====================================================================
+// IGA - Instituto Gastronómico de las Américas
+// Firestore Security Rules
+//
+// Roles: admin | docente | alumno | compras
+// El rol de cada usuario vive en usuarios/{uid} (documento separado de
+// Firebase Authentication, relacionado por el UID).
+//
+// docentes/{id} y alumnos/{id} son fichas de catálogo (nombre, email, etc).
+// usuarios/{uid} es la cuenta de login y puede referenciar a una ficha
+// mediante docenteId / alumnoId cuando corresponde, para poder filtrar
+// "mis clases" / "mis notas" en las reglas de abajo.
+//
+// IMPORTANTE (limitación real de Firestore): estas reglas no "filtran"
+// resultados de una query, los VALIDAN. Si el frontend pide una lista sin
+// el where() que matchea la condición de la regla, Firestore rechaza toda
+// la query. Por eso el frontend (app.js) siempre consulta:
+//   - asistencias / notas / planificaciones de un docente ->
+//       .where('docenteId', '==', miDocenteId)
+//   - notas / asistencias de un alumno ->
+//       .where('alumnoId', '==', miAlumnoId)
+// =====================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Helpers ----------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function userRole() {
+      return isSignedIn() ? userDoc().rol : null;
+    }
+
+    function isActive() {
+      return isSignedIn() && userDoc().activo == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && isActive() && userRole() == 'admin';
+    }
+
+    function isDocente() {
+      return isSignedIn() && isActive() && userRole() == 'docente';
+    }
+
+    function isAlumno() {
+      return isSignedIn() && isActive() && userRole() == 'alumno';
+    }
+
+    function isCompras() {
+      return isSignedIn() && isActive() && userRole() == 'compras';
+    }
+
+    function miDocenteId() {
+      return userDoc().docenteId;
+    }
+
+    function miAlumnoId() {
+      return userDoc().alumnoId;
+    }
+
+    // ---------- usuarios ----------
+    // Cada usuario puede leer su propio documento (para saber su rol).
+    // Solo admin gestiona altas/bajas de usuarios desde la app.
+    match /usuarios/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update: if isAdmin();
+      allow delete: if false; // dar de baja con activo:false, no borrar
+    }
+
+    // ---------- Catálogos simples ----------
+    // Carreras, Turnos, Docentes, Alumnos, Ingredientes: lectura amplia
+    // para todo usuario activo del sistema, escritura solo admin.
+    match /carreras/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    match /turnos/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    match /docentes/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    match /alumnos/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    match /ingredientes/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    // ---------- Inscripciones (Alumno + Carrera + Turno) ----------
+    match /inscripciones/{id} {
+      allow read: if isActive() && (
+        isAdmin() || isCompras() ||
+        (isDocente()) ||
+        (isAlumno() && resource.data.alumnoId == miAlumnoId())
+      );
+      allow create, update: if isAdmin();
+      allow delete: if false; // dar de baja con activo:false
+    }
+
+    // ---------- Clases (día/turno/carrera recurrente semanal) ----------
+    match /clases/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    // ---------- Recetas (con ingredientes embebidos) ----------
+    match /recetas/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    // ---------- Planificación semanal (grupos + receta asignada) ----------
+    // Documento por clase+semana. El docente solo puede tocar la
+    // planificación de SUS clases (docenteId denormalizado en el doc).
+    match /planificaciones/{id} {
+      allow read: if isActive();
+      allow create, update: if isAdmin() ||
+        (isDocente() && request.resource.data.docenteId == miDocenteId());
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Lista de compras semanal (generada) ----------
+    // Se genera/regenera desde la app (admin) agregando ingredientes de
+    // todas las planificaciones de la semana. Compras solo lee.
+    match /listasCompra/{semanaId} {
+      allow read: if isAdmin() || isCompras();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ---------- Asistencia (transaccional) ----------
+    // Se corrige con un registro nuevo si hace falta, no se borra.
+    match /asistencias/{id} {
+      allow read: if isActive() && (
+        isAdmin() ||
+        (isDocente() && resource.data.docenteId == miDocenteId()) ||
+        (isAlumno() && resource.data.alumnoId == miAlumnoId())
+      );
+      allow create: if isAdmin() ||
+        (isDocente() && request.resource.data.docenteId == miDocenteId());
+      allow update: if isAdmin() ||
+        (isDocente() && resource.data.docenteId == miDocenteId());
+      allow delete: if false;
+    }
+
+    // ---------- Notas / calificaciones (transaccional) ----------
+    match /notas/{id} {
+      allow read: if isActive() && (
+        isAdmin() ||
+        (isDocente() && resource.data.docenteId == miDocenteId()) ||
+        (isAlumno() && resource.data.alumnoId == miAlumnoId())
+      );
+      allow create: if isAdmin() ||
+        (isDocente() && request.resource.data.docenteId == miDocenteId());
+      allow update: if isAdmin() ||
+        (isDocente() && resource.data.docenteId == miDocenteId());
+      allow delete: if false;
+    }
+  }
+}

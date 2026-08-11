@@ -1,0 +1,1202 @@
+// =====================================================================
+// app.js - IGA · Administración de Cocina
+// Toda la app: componentes React, lógica, pantallas. Sin build, sin
+// router, sin Context/Redux (estado por props desde AppShell).
+// Requiere que firebase-config.js y permissions.js se hayan cargado
+// antes (dejan auth, db, ROLES, PERMISSIONS, etc. como globales).
+// =====================================================================
+
+const { useState, useEffect } = React;
+
+const APP_VERSION = '0.1.0';
+
+const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete'];
+
+// Semana en formato "YYYY-Www" (compatible con <input type="week">).
+// Es una aproximación práctica, no un cálculo ISO-8601 estricto — alcanza
+// para agrupar clases/compras semana a semana en una herramienta interna.
+function getSemanaActualInputValue() {
+  const now = new Date();
+  return inputWeekFromDate(now.toISOString().slice(0, 10));
+}
+
+function inputWeekFromDate(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const jan1 = new Date(d.getFullYear(), 0, 1);
+  const dayNum = Math.floor((d - jan1) / 86400000);
+  const week = Math.ceil((dayNum + jan1.getDay() + 1) / 7);
+  return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+// ---------------------------------------------------------------------
+// Hook genérico: suscripción en tiempo real a una colección de Firestore.
+// deps controla cuándo se vuelve a suscribir (ej: cambió un filtro).
+// ---------------------------------------------------------------------
+function useCollection(path, queryFn, deps) {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    let ref = db.collection(path);
+    if (queryFn) ref = queryFn(ref);
+    const unsub = ref.onSnapshot(
+      (snap) => {
+        setData(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setLoading(false);
+      },
+      (err) => {
+        console.error(`Error leyendo ${path}:`, err);
+        setLoading(false);
+      }
+    );
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps || [path]);
+
+  return [data, loading];
+}
+
+// ---------------------------------------------------------------------
+// Componentes genéricos de UI
+// ---------------------------------------------------------------------
+function LoadingSpinner({ full }) {
+  return <div className={full ? 'loading-full' : 'loading'}>Cargando...</div>;
+}
+
+function Modal({ title, onClose, children, wide }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className={`modal ${wide ? 'modal-wide' : ''}`} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{title}</h3>
+          <button className="btn-icon" onClick={onClose} type="button">✕</button>
+        </div>
+        <div className="modal-body">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function FormField({ field, value, onChange }) {
+  if (field.type === 'textarea') {
+    return (
+      <label>{field.label}
+        <textarea value={value || ''} onChange={(e) => onChange(e.target.value)} rows={3} required={field.required} />
+      </label>
+    );
+  }
+  if (field.type === 'select') {
+    return (
+      <label>{field.label}
+        <select value={value || ''} onChange={(e) => onChange(e.target.value)} required={field.required}>
+          <option value="">Elegir...</option>
+          {(field.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </label>
+    );
+  }
+  if (field.type === 'checkbox') {
+    return (
+      <label className="checkbox-label">
+        <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} /> {field.label}
+      </label>
+    );
+  }
+  if (field.type === 'number') {
+    return (
+      <label>{field.label}
+        <input type="number" value={value || ''} onChange={(e) => onChange(e.target.value)} required={field.required} />
+      </label>
+    );
+  }
+  return (
+    <label>{field.label}
+      <input type="text" value={value || ''} onChange={(e) => onChange(e.target.value)} required={field.required} />
+    </label>
+  );
+}
+
+function renderCellValue(val, field) {
+  if (field.type === 'checkbox') return val ? 'Sí' : 'No';
+  if (field.type === 'select' && field.options) {
+    const opt = field.options.find((o) => o.value === val);
+    return opt ? opt.label : val;
+  }
+  return val;
+}
+
+// ---------------------------------------------------------------------
+// CrudTable: tabla + modal de alta/edición genérico para colecciones
+// "catálogo" simples (carreras, turnos, docentes, alumnos, ingredientes,
+// clases). filterFn es opcional y solo acota qué se MUESTRA en pantalla
+// (no reemplaza las reglas de seguridad reales, que viven en Firestore).
+// ---------------------------------------------------------------------
+function CrudTable({ title, collectionName, fields, role, extraDefault, filterFn }) {
+  const [items, loading] = useCollection(collectionName, null, [collectionName]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({});
+  const puedeEscribir = canWrite(collectionName, role);
+  const visibles = filterFn ? items.filter(filterFn) : items;
+
+  function openNew() {
+    const initial = {};
+    fields.forEach((f) => { initial[f.key] = f.type === 'checkbox' ? true : ''; });
+    setForm({ ...initial, ...extraDefault });
+    setEditing(null);
+    setModalOpen(true);
+  }
+
+  function openEdit(item) {
+    setForm({ ...item });
+    setEditing(item);
+    setModalOpen(true);
+  }
+
+  async function guardar(e) {
+    e.preventDefault();
+    const data = {};
+    fields.forEach((f) => { data[f.key] = form[f.key] ?? (f.type === 'checkbox' ? false : ''); });
+    try {
+      if (editing) {
+        await db.collection(collectionName).doc(editing.id).update(data);
+      } else {
+        await db.collection(collectionName).add({
+          ...data, ...extraDefault,
+          creadoEn: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      setModalOpen(false);
+    } catch (err) {
+      alert('Error al guardar: ' + err.message);
+    }
+  }
+
+  async function eliminar(item) {
+    if (!confirm(`¿Eliminar "${item.nombre || item.id}"?`)) return;
+    try {
+      await db.collection(collectionName).doc(item.id).delete();
+    } catch (err) {
+      alert('Error al eliminar: ' + err.message);
+    }
+  }
+
+  if (loading) return <LoadingSpinner />;
+
+  return (
+    <div className="view">
+      <div className="view-header">
+        <h2>{title}</h2>
+        {puedeEscribir && <button className="btn btn-primary" onClick={openNew} type="button">+ Nuevo</button>}
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              {fields.map((f) => <th key={f.key}>{f.label}</th>)}
+              {puedeEscribir && <th>Acciones</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {visibles.map((item) => (
+              <tr key={item.id}>
+                {fields.map((f) => <td key={f.key}>{renderCellValue(item[f.key], f)}</td>)}
+                {puedeEscribir && (
+                  <td className="actions">
+                    <button className="btn-icon" onClick={() => openEdit(item)} type="button">Editar</button>
+                    <button className="btn-icon btn-danger" onClick={() => eliminar(item)} type="button">Borrar</button>
+                  </td>
+                )}
+              </tr>
+            ))}
+            {visibles.length === 0 && (
+              <tr><td colSpan={fields.length + 1} className="empty">Sin registros todavía.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {modalOpen && (
+        <Modal title={editing ? 'Editar' : 'Nuevo'} onClose={() => setModalOpen(false)}>
+          <form onSubmit={guardar} className="form">
+            {fields.map((f) => (
+              <FormField key={f.key} field={f} value={form[f.key]} onChange={(v) => setForm({ ...form, [f.key]: v })} />
+            ))}
+            <div className="form-actions">
+              <button type="button" className="btn" onClick={() => setModalOpen(false)}>Cancelar</button>
+              <button type="submit" className="btn btn-primary">Guardar</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Vistas de catálogo simple
+// ---------------------------------------------------------------------
+function CarrerasView({ role }) {
+  const fields = [
+    { key: 'nombre', label: 'Nombre', type: 'text', required: true },
+    { key: 'descripcion', label: 'Descripción', type: 'textarea' },
+    { key: 'activo', label: 'Activo', type: 'checkbox' },
+  ];
+  return <CrudTable title="Carreras" collectionName="carreras" fields={fields} role={role} extraDefault={{ activo: true }} />;
+}
+
+function TurnosView({ role }) {
+  const fields = [
+    { key: 'nombre', label: 'Nombre (ej: Mañana)', type: 'text', required: true },
+    { key: 'activo', label: 'Activo', type: 'checkbox' },
+  ];
+  return <CrudTable title="Turnos" collectionName="turnos" fields={fields} role={role} extraDefault={{ activo: true }} />;
+}
+
+function DocentesView({ role }) {
+  const fields = [
+    { key: 'nombre', label: 'Nombre', type: 'text', required: true },
+    { key: 'email', label: 'Email', type: 'text' },
+    { key: 'activo', label: 'Activo', type: 'checkbox' },
+  ];
+  return <CrudTable title="Docentes" collectionName="docentes" fields={fields} role={role} extraDefault={{ activo: true }} />;
+}
+
+function AlumnosView({ role }) {
+  const fields = [
+    { key: 'nombre', label: 'Nombre', type: 'text', required: true },
+    { key: 'email', label: 'Email', type: 'text' },
+    { key: 'dni', label: 'DNI', type: 'text' },
+    { key: 'activo', label: 'Activo', type: 'checkbox' },
+  ];
+  return <CrudTable title="Alumnos" collectionName="alumnos" fields={fields} role={role} extraDefault={{ activo: true }} />;
+}
+
+function IngredientesView({ role }) {
+  const fields = [
+    { key: 'nombre', label: 'Nombre', type: 'text', required: true },
+    { key: 'unidadMedida', label: 'Unidad', type: 'select', options: UNIDADES.map((u) => ({ value: u, label: u })) },
+  ];
+  return <CrudTable title="Ingredientes" collectionName="ingredientes" fields={fields} role={role} />;
+}
+
+function ClasesView({ role, usuario }) {
+  const [carreras] = useCollection('carreras', null, []);
+  const [turnos] = useCollection('turnos', null, []);
+  const [docentes] = useCollection('docentes', null, []);
+  const [misInscripciones] = useCollection(
+    'inscripciones',
+    (ref) => (role === ROLES.ALUMNO && usuario.alumnoId ? ref.where('alumnoId', '==', usuario.alumnoId) : ref.where('alumnoId', '==', '__none__')),
+    [role, usuario.alumnoId]
+  );
+
+  const fields = [
+    { key: 'nombre', label: 'Nombre de la clase', type: 'text', required: true },
+    { key: 'carreraId', label: 'Carrera', type: 'select', options: carreras.map((c) => ({ value: c.id, label: c.nombre })) },
+    { key: 'turnoId', label: 'Turno', type: 'select', options: turnos.map((t) => ({ value: t.id, label: t.nombre })) },
+    { key: 'diaSemana', label: 'Día', type: 'select', options: DIAS_SEMANA.map((d) => ({ value: d, label: d })) },
+    { key: 'docenteId', label: 'Docente', type: 'select', options: docentes.map((d) => ({ value: d.id, label: d.nombre })) },
+    { key: 'activo', label: 'Activo', type: 'checkbox' },
+  ];
+
+  let filterFn = null;
+  if (role === ROLES.DOCENTE) filterFn = (c) => c.docenteId === usuario.docenteId;
+  if (role === ROLES.ALUMNO) {
+    const combos = misInscripciones.map((i) => `${i.carreraId}_${i.turnoId}`);
+    filterFn = (c) => combos.includes(`${c.carreraId}_${c.turnoId}`);
+  }
+
+  return <CrudTable title="Clases" collectionName="clases" fields={fields} role={role} extraDefault={{ activo: true }} filterFn={filterFn} />;
+}
+
+// ---------------------------------------------------------------------
+// Inscripciones (Alumno + Carrera + Turno) - vista a medida
+// ---------------------------------------------------------------------
+function InscripcionesView({ role }) {
+  const [inscripciones] = useCollection('inscripciones', null, []);
+  const [alumnos] = useCollection('alumnos', null, []);
+  const [carreras] = useCollection('carreras', null, []);
+  const [turnos] = useCollection('turnos', null, []);
+  const [form, setForm] = useState({ alumnoId: '', carreraId: '', turnoId: '' });
+  const puedeEscribir = canWrite('inscripciones', role);
+
+  const nombreAlumno = (id) => (alumnos.find((a) => a.id === id) || {}).nombre || id;
+  const nombreCarrera = (id) => (carreras.find((c) => c.id === id) || {}).nombre || id;
+  const nombreTurno = (id) => (turnos.find((t) => t.id === id) || {}).nombre || id;
+
+  async function inscribir(e) {
+    e.preventDefault();
+    if (!form.alumnoId || !form.carreraId || !form.turnoId) return alert('Completá los tres campos.');
+    try {
+      await db.collection('inscripciones').add({ ...form, activo: true, fechaAlta: firebase.firestore.FieldValue.serverTimestamp() });
+      setForm({ alumnoId: '', carreraId: '', turnoId: '' });
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  async function toggleActivo(insc) {
+    try {
+      await db.collection('inscripciones').doc(insc.id).update({ activo: !insc.activo });
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  return (
+    <div className="view">
+      <h2>Inscripciones</h2>
+      {puedeEscribir && (
+        <form className="form form-inline" onSubmit={inscribir}>
+          <select value={form.alumnoId} onChange={(e) => setForm({ ...form, alumnoId: e.target.value })}>
+            <option value="">Alumno...</option>
+            {alumnos.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+          </select>
+          <select value={form.carreraId} onChange={(e) => setForm({ ...form, carreraId: e.target.value })}>
+            <option value="">Carrera...</option>
+            {carreras.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+          <select value={form.turnoId} onChange={(e) => setForm({ ...form, turnoId: e.target.value })}>
+            <option value="">Turno...</option>
+            {turnos.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+          </select>
+          <button className="btn btn-primary" type="submit">Inscribir</button>
+        </form>
+      )}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Alumno</th><th>Carrera</th><th>Turno</th><th>Activo</th>{puedeEscribir && <th>Acciones</th>}</tr>
+          </thead>
+          <tbody>
+            {inscripciones.map((i) => (
+              <tr key={i.id}>
+                <td>{nombreAlumno(i.alumnoId)}</td>
+                <td>{nombreCarrera(i.carreraId)}</td>
+                <td>{nombreTurno(i.turnoId)}</td>
+                <td>{i.activo ? 'Sí' : 'No'}</td>
+                {puedeEscribir && (
+                  <td><button className="btn-icon" onClick={() => toggleActivo(i)} type="button">{i.activo ? 'Dar de baja' : 'Reactivar'}</button></td>
+                )}
+              </tr>
+            ))}
+            {inscripciones.length === 0 && <tr><td colSpan={5} className="empty">Sin inscripciones todavía.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Recetas: ingredientes embebidos (patrón "catálogo con array embebido")
+// ---------------------------------------------------------------------
+function RecetasView({ role }) {
+  const [recetas, loading] = useCollection('recetas', null, []);
+  const [ingredientesCat] = useCollection('ingredientes', null, []);
+  const puedeEscribir = canWrite('recetas', role);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [nombre, setNombre] = useState('');
+  const [procedimiento, setProcedimiento] = useState('');
+  const [items, setItems] = useState([]);
+
+  function openNew() {
+    setNombre(''); setProcedimiento(''); setItems([]); setEditing(null); setModalOpen(true);
+  }
+  function openEdit(r) {
+    setNombre(r.nombre); setProcedimiento(r.procedimiento || ''); setItems(r.ingredientes || []); setEditing(r); setModalOpen(true);
+  }
+  function addIngredienteRow() { setItems([...items, { ingredienteId: '', cantidad: '' }]); }
+  function updateRow(i, patch) { setItems(items.map((it, idx) => (idx === i ? { ...it, ...patch } : it))); }
+  function removeRow(i) { setItems(items.filter((_, idx) => idx !== i)); }
+
+  async function guardar(e) {
+    e.preventDefault();
+    if (!nombre.trim()) return alert('Poné un nombre.');
+    const ingredientesLimpios = items
+      .filter((it) => it.ingredienteId && it.cantidad)
+      .map((it) => {
+        const cat = ingredientesCat.find((ic) => ic.id === it.ingredienteId);
+        return {
+          ingredienteId: it.ingredienteId,
+          nombre: cat ? cat.nombre : '',
+          unidad: cat ? cat.unidadMedida : '',
+          cantidad: Number(it.cantidad),
+        };
+      });
+    const data = { nombre: nombre.trim(), procedimiento, ingredientes: ingredientesLimpios };
+    try {
+      if (editing) await db.collection('recetas').doc(editing.id).update(data);
+      else await db.collection('recetas').add({ ...data, creadoEn: firebase.firestore.FieldValue.serverTimestamp() });
+      setModalOpen(false);
+    } catch (err) {
+      alert('Error al guardar: ' + err.message);
+    }
+  }
+
+  async function eliminar(r) {
+    if (!confirm(`¿Eliminar la receta "${r.nombre}"?`)) return;
+    try {
+      await db.collection('recetas').doc(r.id).delete();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  if (loading) return <LoadingSpinner />;
+
+  return (
+    <div className="view">
+      <div className="view-header">
+        <h2>Recetas</h2>
+        {puedeEscribir && <button className="btn btn-primary" onClick={openNew} type="button">+ Nueva receta</button>}
+      </div>
+      <div className="cards-grid">
+        {recetas.map((r) => (
+          <div className="card" key={r.id}>
+            <h3>{r.nombre}</h3>
+            <p className="muted">{(r.ingredientes || []).length} ingredientes</p>
+            <ul className="mini-list">
+              {(r.ingredientes || []).slice(0, 4).map((ing, i) => <li key={i}>{ing.nombre}: {ing.cantidad} {ing.unidad}</li>)}
+              {(r.ingredientes || []).length > 4 && <li>...</li>}
+            </ul>
+            {puedeEscribir && (
+              <div className="card-actions">
+                <button className="btn-icon" onClick={() => openEdit(r)} type="button">Editar</button>
+                <button className="btn-icon btn-danger" onClick={() => eliminar(r)} type="button">Borrar</button>
+              </div>
+            )}
+          </div>
+        ))}
+        {recetas.length === 0 && <p className="empty">Todavía no hay recetas cargadas.</p>}
+      </div>
+
+      {modalOpen && (
+        <Modal title={editing ? 'Editar receta' : 'Nueva receta'} onClose={() => setModalOpen(false)} wide>
+          <form onSubmit={guardar} className="form">
+            <label>Nombre<input value={nombre} onChange={(e) => setNombre(e.target.value)} required /></label>
+            <label>Procedimiento<textarea value={procedimiento} onChange={(e) => setProcedimiento(e.target.value)} rows={4} /></label>
+            <div className="ingredientes-editor">
+              <div className="view-header">
+                <strong>Ingredientes</strong>
+                <button type="button" className="btn" onClick={addIngredienteRow}>+ Agregar ingrediente</button>
+              </div>
+              {items.map((it, i) => (
+                <div className="ingrediente-row" key={i}>
+                  <select value={it.ingredienteId} onChange={(e) => updateRow(i, { ingredienteId: e.target.value })}>
+                    <option value="">Elegir ingrediente...</option>
+                    {ingredientesCat.map((ic) => <option key={ic.id} value={ic.id}>{ic.nombre} ({ic.unidadMedida})</option>)}
+                  </select>
+                  <input type="number" min="0" step="0.01" placeholder="Cantidad por ejecución" value={it.cantidad} onChange={(e) => updateRow(i, { cantidad: e.target.value })} />
+                  <button type="button" className="btn-icon btn-danger" onClick={() => removeRow(i)}>Quitar</button>
+                </div>
+              ))}
+              {items.length === 0 && <p className="muted">Agregá los ingredientes que necesita esta receta (cantidad por cada vez que un grupo la prepara).</p>}
+            </div>
+            <div className="form-actions">
+              <button type="button" className="btn" onClick={() => setModalOpen(false)}>Cancelar</button>
+              <button type="submit" className="btn btn-primary">Guardar</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Planificación semanal: por Clase + Semana, cuántos Grupos hay y qué
+// Receta prepara cada uno. Acá nace el dato que arma la lista de compras.
+// ID de documento predecible: `${claseId}_${semanaId}`.
+// ---------------------------------------------------------------------
+function PlanificacionView({ usuario, role }) {
+  const [clases] = useCollection('clases', null, []);
+  const [recetas] = useCollection('recetas', null, []);
+  const [semana, setSemana] = useState(getSemanaActualInputValue());
+  const [claseId, setClaseId] = useState('');
+  const [grupos, setGrupos] = useState([]);
+  const [cargando, setCargando] = useState(false);
+
+  const clasesVisibles = role === ROLES.DOCENTE ? clases.filter((c) => c.docenteId === usuario.docenteId) : clases;
+
+  useEffect(() => {
+    if (!claseId || !semana) { setGrupos([]); return; }
+    const docId = `${claseId}_${semana}`;
+    setCargando(true);
+    db.collection('planificaciones').doc(docId).get().then((snap) => {
+      setGrupos(snap.exists ? snap.data().grupos || [] : []);
+      setCargando(false);
+    });
+  }, [claseId, semana]);
+
+  function addGrupo() { setGrupos([...grupos, { numero: grupos.length + 1, recetaId: '' }]); }
+  function updateGrupo(i, recetaId) { setGrupos(grupos.map((g, idx) => (idx === i ? { ...g, recetaId } : g))); }
+  function removeGrupo(i) { setGrupos(grupos.filter((_, idx) => idx !== i).map((g, idx) => ({ ...g, numero: idx + 1 }))); }
+
+  async function guardar() {
+    if (!claseId || !semana) return alert('Elegí clase y semana.');
+    const clase = clases.find((c) => c.id === claseId);
+    const docId = `${claseId}_${semana}`;
+    const gruposLimpios = grupos.filter((g) => g.recetaId);
+    try {
+      await db.collection('planificaciones').doc(docId).set({
+        claseId, semanaId: semana, docenteId: clase.docenteId, carreraId: clase.carreraId,
+        grupos: gruposLimpios,
+        actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      alert('Planificación guardada.');
+    } catch (err) {
+      alert('Error al guardar: ' + err.message);
+    }
+  }
+
+  return (
+    <div className="view">
+      <h2>Planificación semanal</h2>
+      <p className="muted">Definí, para cada clase de la semana, cuántos grupos hay y qué receta prepara cada uno. De acá sale la lista de compras.</p>
+      <div className="filters">
+        <label>Semana<input type="week" value={semana} onChange={(e) => setSemana(e.target.value)} /></label>
+        <label>Clase
+          <select value={claseId} onChange={(e) => setClaseId(e.target.value)}>
+            <option value="">Elegir clase...</option>
+            {clasesVisibles.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+        </label>
+      </div>
+
+      {claseId && semana && !cargando && (
+        <div className="grupos-editor">
+          <div className="view-header"><strong>Grupos</strong><button className="btn" onClick={addGrupo} type="button">+ Agregar grupo</button></div>
+          {grupos.map((g, i) => (
+            <div className="grupo-row" key={i}>
+              <span className="grupo-num">Grupo {g.numero}</span>
+              <select value={g.recetaId} onChange={(e) => updateGrupo(i, e.target.value)}>
+                <option value="">Elegir receta...</option>
+                {recetas.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+              </select>
+              <button className="btn-icon btn-danger" onClick={() => removeGrupo(i)} type="button">Quitar</button>
+            </div>
+          ))}
+          {grupos.length === 0 && <p className="muted">Todavía no hay grupos para esta clase/semana.</p>}
+          <button className="btn btn-primary" onClick={guardar} type="button">Guardar planificación</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Lista de compras semanal: agrega ingredientes de todas las
+// planificaciones de la semana. Se genera/regenera a demanda (no hay
+// Cloud Functions), y se guarda como snapshot en listasCompra/{semanaId}.
+// ---------------------------------------------------------------------
+function ComprasView({ role }) {
+  const [semana, setSemana] = useState(getSemanaActualInputValue());
+  const [lista, setLista] = useState(null);
+  const [generando, setGenerando] = useState(false);
+  const puedeGenerar = role === ROLES.ADMIN;
+
+  useEffect(() => {
+    if (!semana) return;
+    const unsub = db.collection('listasCompra').doc(semana).onSnapshot((snap) => {
+      setLista(snap.exists ? snap.data() : null);
+    });
+    return unsub;
+  }, [semana]);
+
+  async function generar() {
+    setGenerando(true);
+    try {
+      const planSnap = await db.collection('planificaciones').where('semanaId', '==', semana).get();
+      const conteoRecetas = {};
+      planSnap.forEach((doc) => {
+        (doc.data().grupos || []).forEach((g) => {
+          if (!g.recetaId) return;
+          conteoRecetas[g.recetaId] = (conteoRecetas[g.recetaId] || 0) + 1;
+        });
+      });
+      const recetaIds = Object.keys(conteoRecetas);
+
+      if (recetaIds.length === 0) {
+        await db.collection('listasCompra').doc(semana).set({
+          semanaId: semana, fechaGeneracion: firebase.firestore.FieldValue.serverTimestamp(), detalle: [],
+        });
+        setGenerando(false);
+        return;
+      }
+
+      // Firestore 'in' soporta hasta 30 valores por consulta -> se piden de a tandas.
+      const recetasDocs = [];
+      for (let i = 0; i < recetaIds.length; i += 30) {
+        const tanda = recetaIds.slice(i, i + 30);
+        const snap = await db.collection('recetas').where(firebase.firestore.FieldPath.documentId(), 'in', tanda).get();
+        snap.forEach((d) => recetasDocs.push({ id: d.id, ...d.data() }));
+      }
+
+      const totales = {};
+      recetasDocs.forEach((receta) => {
+        const veces = conteoRecetas[receta.id] || 0;
+        (receta.ingredientes || []).forEach((ing) => {
+          if (!totales[ing.ingredienteId]) totales[ing.ingredienteId] = { nombre: ing.nombre, unidad: ing.unidad, cantidadTotal: 0 };
+          totales[ing.ingredienteId].cantidadTotal += (Number(ing.cantidad) || 0) * veces;
+        });
+      });
+
+      const detalle = Object.entries(totales)
+        .map(([ingredienteId, v]) => ({ ingredienteId, ...v }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+      await db.collection('listasCompra').doc(semana).set({
+        semanaId: semana, fechaGeneracion: firebase.firestore.FieldValue.serverTimestamp(), detalle,
+      });
+    } catch (err) {
+      alert('Error al generar la lista: ' + err.message);
+    }
+    setGenerando(false);
+  }
+
+  function exportarExcel() {
+    if (!lista || !lista.detalle || lista.detalle.length === 0) return;
+    const rows = lista.detalle.map((d) => ({ Ingrediente: d.nombre, 'Cantidad total': d.cantidadTotal, Unidad: d.unidad }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Lista de compras');
+    XLSX.writeFile(wb, `lista-compras-${semana}.xlsx`);
+  }
+
+  return (
+    <div className="view">
+      <h2>Lista de compras semanal</h2>
+      <div className="filters">
+        <label>Semana<input type="week" value={semana} onChange={(e) => setSemana(e.target.value)} /></label>
+        {puedeGenerar && (
+          <button className="btn btn-primary" onClick={generar} disabled={generando} type="button">
+            {generando ? 'Generando...' : 'Generar / Regenerar lista'}
+          </button>
+        )}
+        {lista && lista.detalle && lista.detalle.length > 0 && (
+          <button className="btn" onClick={exportarExcel} type="button">Exportar a Excel</button>
+        )}
+      </div>
+
+      {!lista && <p className="empty">Todavía no se generó la lista de esta semana.</p>}
+      {lista && (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Ingrediente</th><th>Cantidad total</th><th>Unidad</th></tr></thead>
+            <tbody>
+              {(lista.detalle || []).map((d) => (
+                <tr key={d.ingredienteId}><td>{d.nombre}</td><td>{d.cantidadTotal}</td><td>{d.unidad}</td></tr>
+              ))}
+              {(lista.detalle || []).length === 0 && <tr><td colSpan={3} className="empty">No hay planificación cargada para esta semana.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Asistencia (transaccional: se corrige con un registro nuevo, no se
+// borra). ID predecible `${claseId}_${fecha}_${alumnoId}` para que
+// volver a guardar el mismo día actualice en vez de duplicar.
+// ---------------------------------------------------------------------
+function AsistenciaView({ usuario, role }) {
+  const [clases] = useCollection('clases', null, []);
+  const [claseId, setClaseId] = useState('');
+  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [alumnosClase, setAlumnosClase] = useState([]);
+  const [presentes, setPresentes] = useState({});
+  const [misAsistencias] = useCollection(
+    'asistencias',
+    (ref) => (role === ROLES.ALUMNO && usuario.alumnoId ? ref.where('alumnoId', '==', usuario.alumnoId) : ref.where('alumnoId', '==', '__none__')),
+    [role, usuario.alumnoId]
+  );
+
+  const clasesVisibles = role === ROLES.DOCENTE ? clases.filter((c) => c.docenteId === usuario.docenteId) : clases;
+
+  useEffect(() => {
+    if (role === ROLES.ALUMNO) return;
+    if (!claseId) { setAlumnosClase([]); return; }
+    const clase = clases.find((c) => c.id === claseId);
+    if (!clase) return;
+    db.collection('inscripciones')
+      .where('carreraId', '==', clase.carreraId).where('turnoId', '==', clase.turnoId).where('activo', '==', true)
+      .get()
+      .then((snap) => {
+        const insc = snap.docs.map((d) => d.data());
+        Promise.all(insc.map((i) => db.collection('alumnos').doc(i.alumnoId).get())).then((alSnaps) => {
+          const list = alSnaps.filter((s) => s.exists).map((s) => ({ id: s.id, ...s.data() }));
+          setAlumnosClase(list);
+          db.collection('asistencias').where('claseId', '==', claseId).where('fecha', '==', fecha).get().then((asnap) => {
+            const p = {};
+            asnap.forEach((d) => { p[d.data().alumnoId] = d.data().presente; });
+            setPresentes(p);
+          });
+        });
+      });
+  }, [claseId, fecha, clases, role]);
+
+  async function guardarAsistencia() {
+    const clase = clases.find((c) => c.id === claseId);
+    if (!clase) return;
+    const semanaId = inputWeekFromDate(fecha);
+    try {
+      await Promise.all(alumnosClase.map((al) => {
+        const id = `${claseId}_${fecha}_${al.id}`;
+        return db.collection('asistencias').doc(id).set({
+          claseId, docenteId: clase.docenteId, alumnoId: al.id, fecha, semanaId,
+          presente: !!presentes[al.id],
+        });
+      }));
+      alert('Asistencia guardada.');
+    } catch (err) {
+      alert('Error al guardar: ' + err.message);
+    }
+  }
+
+  if (role === ROLES.ALUMNO) {
+    return (
+      <div className="view">
+        <h2>Mi asistencia</h2>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Presente</th></tr></thead>
+            <tbody>
+              {misAsistencias.map((a) => <tr key={a.id}><td>{a.fecha}</td><td>{a.presente ? 'Sí' : 'No'}</td></tr>)}
+              {misAsistencias.length === 0 && <tr><td colSpan={2} className="empty">Sin registros todavía.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="view">
+      <h2>Asistencia</h2>
+      <div className="filters">
+        <label>Clase
+          <select value={claseId} onChange={(e) => setClaseId(e.target.value)}>
+            <option value="">Elegir clase...</option>
+            {clasesVisibles.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+        </label>
+        <label>Fecha<input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></label>
+      </div>
+      {claseId && (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Alumno</th><th>Presente</th></tr></thead>
+            <tbody>
+              {alumnosClase.map((al) => (
+                <tr key={al.id}>
+                  <td>{al.nombre}</td>
+                  <td><input type="checkbox" checked={!!presentes[al.id]} onChange={(e) => setPresentes({ ...presentes, [al.id]: e.target.checked })} /></td>
+                </tr>
+              ))}
+              {alumnosClase.length === 0 && <tr><td colSpan={2} className="empty">No hay alumnos inscriptos en esta carrera/turno.</td></tr>}
+            </tbody>
+          </table>
+          {alumnosClase.length > 0 && <button className="btn btn-primary" onClick={guardarAsistencia} type="button">Guardar asistencia</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Notas / calificaciones (transaccional: cada evaluación es un registro
+// nuevo, se acumula historial en vez de sobrescribir).
+// ---------------------------------------------------------------------
+function NotasView({ usuario, role }) {
+  const [clases] = useCollection('clases', null, []);
+  const [claseId, setClaseId] = useState('');
+  const [alumnosClase, setAlumnosClase] = useState([]);
+  const [notasClase, setNotasClase] = useState([]);
+  const [tipoEvaluacion, setTipoEvaluacion] = useState('');
+  const [valores, setValores] = useState({});
+  const [misNotas] = useCollection(
+    'notas',
+    (ref) => (role === ROLES.ALUMNO && usuario.alumnoId ? ref.where('alumnoId', '==', usuario.alumnoId) : ref.where('alumnoId', '==', '__none__')),
+    [role, usuario.alumnoId]
+  );
+
+  const clasesVisibles = role === ROLES.DOCENTE ? clases.filter((c) => c.docenteId === usuario.docenteId) : clases;
+
+  useEffect(() => {
+    if (role === ROLES.ALUMNO || !claseId) { setAlumnosClase([]); return; }
+    const clase = clases.find((c) => c.id === claseId);
+    if (!clase) return;
+    db.collection('inscripciones')
+      .where('carreraId', '==', clase.carreraId).where('turnoId', '==', clase.turnoId).where('activo', '==', true)
+      .get()
+      .then((snap) => {
+        const insc = snap.docs.map((d) => d.data());
+        Promise.all(insc.map((i) => db.collection('alumnos').doc(i.alumnoId).get())).then((alSnaps) => {
+          setAlumnosClase(alSnaps.filter((s) => s.exists).map((s) => ({ id: s.id, ...s.data() })));
+        });
+      });
+    const unsub = db.collection('notas').where('claseId', '==', claseId).onSnapshot((snap) => {
+      setNotasClase(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, [claseId, clases, role]);
+
+  async function guardarNotas() {
+    if (!tipoEvaluacion.trim()) return alert('Poné un nombre para la evaluación (ej: "Parcial 1").');
+    const clase = clases.find((c) => c.id === claseId);
+    const aGuardar = alumnosClase.filter((al) => valores[al.id] !== undefined && valores[al.id] !== '');
+    if (aGuardar.length === 0) return alert('Cargá al menos una nota.');
+    try {
+      await Promise.all(aGuardar.map((al) => db.collection('notas').add({
+        claseId, docenteId: clase.docenteId, alumnoId: al.id,
+        tipoEvaluacion: tipoEvaluacion.trim(), valor: Number(valores[al.id]),
+        fecha: new Date().toISOString().slice(0, 10),
+      })));
+      setValores({});
+      setTipoEvaluacion('');
+      alert('Notas guardadas.');
+    } catch (err) {
+      alert('Error al guardar: ' + err.message);
+    }
+  }
+
+  if (role === ROLES.ALUMNO) {
+    return (
+      <div className="view">
+        <h2>Mis notas</h2>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Evaluación</th><th>Nota</th><th>Fecha</th></tr></thead>
+            <tbody>
+              {misNotas.map((n) => <tr key={n.id}><td>{n.tipoEvaluacion}</td><td>{n.valor}</td><td>{n.fecha}</td></tr>)}
+              {misNotas.length === 0 && <tr><td colSpan={3} className="empty">Sin notas cargadas todavía.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="view">
+      <h2>Notas</h2>
+      <div className="filters">
+        <label>Clase
+          <select value={claseId} onChange={(e) => setClaseId(e.target.value)}>
+            <option value="">Elegir clase...</option>
+            {clasesVisibles.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+        </label>
+      </div>
+      {claseId && (
+        <React.Fragment>
+          <div className="filters">
+            <label>Evaluación<input value={tipoEvaluacion} onChange={(e) => setTipoEvaluacion(e.target.value)} placeholder="Ej: Parcial 1" /></label>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Alumno</th><th>Nota</th></tr></thead>
+              <tbody>
+                {alumnosClase.map((al) => (
+                  <tr key={al.id}>
+                    <td>{al.nombre}</td>
+                    <td><input type="number" min="0" max="10" step="0.1" value={valores[al.id] || ''} onChange={(e) => setValores({ ...valores, [al.id]: e.target.value })} /></td>
+                  </tr>
+                ))}
+                {alumnosClase.length === 0 && <tr><td colSpan={2} className="empty">No hay alumnos inscriptos en esta carrera/turno.</td></tr>}
+              </tbody>
+            </table>
+            {alumnosClase.length > 0 && <button className="btn btn-primary" onClick={guardarNotas} type="button">Guardar notas</button>}
+          </div>
+          <h3>Historial de esta clase</h3>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Alumno</th><th>Evaluación</th><th>Nota</th><th>Fecha</th></tr></thead>
+              <tbody>
+                {notasClase.map((n) => {
+                  const al = alumnosClase.find((a) => a.id === n.alumnoId);
+                  return <tr key={n.id}><td>{al ? al.nombre : n.alumnoId}</td><td>{n.tipoEvaluacion}</td><td>{n.valor}</td><td>{n.fecha}</td></tr>;
+                })}
+                {notasClase.length === 0 && <tr><td colSpan={4} className="empty">Sin evaluaciones cargadas.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Usuarios (solo admin): alta de cuentas de login sin cerrar la sesión
+// del Admin, usando una segunda instancia de Firebase ("Secondary").
+// ---------------------------------------------------------------------
+function UsuariosView() {
+  const [usuarios] = useCollection('usuarios', null, []);
+  const [docentes] = useCollection('docentes', null, []);
+  const [alumnos] = useCollection('alumnos', null, []);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState({ nombre: '', email: '', password: '', rol: ROLES.DOCENTE, docenteId: '', alumnoId: '' });
+  const [creando, setCreando] = useState(false);
+
+  async function crearUsuario(e) {
+    e.preventDefault();
+    setCreando(true);
+    const secondary = firebase.apps.find((a) => a.name === 'Secondary') || firebase.initializeApp(firebaseConfig, 'Secondary');
+    try {
+      const cred = await secondary.auth().createUserWithEmailAndPassword(form.email, form.password);
+      const uid = cred.user.uid;
+      await db.collection('usuarios').doc(uid).set({
+        nombre: form.nombre, email: form.email, rol: form.rol, activo: true,
+        docenteId: form.rol === ROLES.DOCENTE ? form.docenteId : null,
+        alumnoId: form.rol === ROLES.ALUMNO ? form.alumnoId : null,
+        creadoEn: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      await secondary.auth().signOut();
+      setModalOpen(false);
+      setForm({ nombre: '', email: '', password: '', rol: ROLES.DOCENTE, docenteId: '', alumnoId: '' });
+    } catch (err) {
+      alert('Error al crear usuario: ' + err.message);
+    }
+    setCreando(false);
+  }
+
+  async function toggleActivo(u) {
+    try {
+      await db.collection('usuarios').doc(u.id).update({ activo: !u.activo });
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  return (
+    <div className="view">
+      <div className="view-header">
+        <h2>Usuarios</h2>
+        <button className="btn btn-primary" onClick={() => setModalOpen(true)} type="button">+ Nuevo usuario</button>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Activo</th><th>Acciones</th></tr></thead>
+          <tbody>
+            {usuarios.map((u) => (
+              <tr key={u.id}>
+                <td>{u.nombre}</td><td>{u.email}</td><td>{ROLE_LABELS[u.rol] || u.rol}</td><td>{u.activo ? 'Sí' : 'No'}</td>
+                <td><button className="btn-icon" onClick={() => toggleActivo(u)} type="button">{u.activo ? 'Desactivar' : 'Activar'}</button></td>
+              </tr>
+            ))}
+            {usuarios.length === 0 && <tr><td colSpan={5} className="empty">Sin usuarios todavía (además de este Admin).</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modalOpen && (
+        <Modal title="Nuevo usuario" onClose={() => setModalOpen(false)}>
+          <form onSubmit={crearUsuario} className="form">
+            <label>Nombre<input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} required /></label>
+            <label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
+            <label>Contraseña inicial<input type="password" minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label>
+            <label>Rol
+              <select value={form.rol} onChange={(e) => setForm({ ...form, rol: e.target.value })}>
+                <option value={ROLES.ADMIN}>Administrativo</option>
+                <option value={ROLES.DOCENTE}>Docente</option>
+                <option value={ROLES.ALUMNO}>Alumno</option>
+                <option value={ROLES.COMPRAS}>Compras</option>
+              </select>
+            </label>
+            {form.rol === ROLES.DOCENTE && (
+              <label>Ficha de docente vinculada
+                <select value={form.docenteId} onChange={(e) => setForm({ ...form, docenteId: e.target.value })}>
+                  <option value="">Elegir...</option>
+                  {docentes.map((d) => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+                </select>
+              </label>
+            )}
+            {form.rol === ROLES.ALUMNO && (
+              <label>Ficha de alumno vinculada
+                <select value={form.alumnoId} onChange={(e) => setForm({ ...form, alumnoId: e.target.value })}>
+                  <option value="">Elegir...</option>
+                  {alumnos.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                </select>
+              </label>
+            )}
+            <div className="form-actions">
+              <button type="button" className="btn" onClick={() => setModalOpen(false)}>Cancelar</button>
+              <button type="submit" className="btn btn-primary" disabled={creando}>{creando ? 'Creando...' : 'Crear usuario'}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Dashboard
+// ---------------------------------------------------------------------
+function DashboardView({ usuario }) {
+  const [carreras] = useCollection('carreras', null, []);
+  const [alumnos] = useCollection('alumnos', null, []);
+  const [clases] = useCollection('clases', null, []);
+  return (
+    <div className="view">
+      <h2>Hola, {(usuario.nombre || '').split(' ')[0] || usuario.email}</h2>
+      <p className="muted">{ROLE_LABELS[usuario.rol]} · Instituto Gastronómico de las Américas</p>
+      {usuario.rol === ROLES.ADMIN && (
+        <div className="cards-grid">
+          <div className="card stat"><div className="stat-num">{carreras.length}</div><div>Carreras</div></div>
+          <div className="card stat"><div className="stat-num">{alumnos.length}</div><div>Alumnos</div></div>
+          <div className="card stat"><div className="stat-num">{clases.length}</div><div>Clases</div></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Login
+// ---------------------------------------------------------------------
+function LoginScreen() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [cargando, setCargando] = useState(false);
+
+  async function entrar(e) {
+    e.preventDefault();
+    setError(''); setCargando(true);
+    try {
+      await auth.signInWithEmailAndPassword(email, password);
+    } catch (err) {
+      setError('No se pudo iniciar sesión: ' + err.message);
+    }
+    setCargando(false);
+  }
+
+  async function recuperar() {
+    if (!email) { setError('Escribí tu email arriba primero.'); return; }
+    try {
+      await auth.sendPasswordResetEmail(email);
+      alert('Te enviamos un mail para restablecer la contraseña.');
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <div className="login-screen">
+      <form className="login-card" onSubmit={entrar}>
+        <h1>IGA</h1>
+        <p className="muted">Administración de Cocina</p>
+        <label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+        <label>Contraseña<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
+        {error && <p className="error">{error}</p>}
+        <button className="btn btn-primary" type="submit" disabled={cargando}>{cargando ? 'Ingresando...' : 'Ingresar'}</button>
+        <button className="btn-link" type="button" onClick={recuperar}>Olvidé mi contraseña</button>
+      </form>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// AppShell: auth + doc de usuario + navegación (sin router)
+// ---------------------------------------------------------------------
+function VistaActual({ vista, usuario }) {
+  const role = usuario.rol;
+  switch (vista) {
+    case 'dashboard': return <DashboardView usuario={usuario} />;
+    case 'carreras': return <CarrerasView role={role} />;
+    case 'turnos': return <TurnosView role={role} />;
+    case 'docentes': return <DocentesView role={role} />;
+    case 'alumnos': return <AlumnosView role={role} />;
+    case 'inscripciones': return <InscripcionesView role={role} />;
+    case 'clases': return <ClasesView role={role} usuario={usuario} />;
+    case 'ingredientes': return <IngredientesView role={role} />;
+    case 'recetas': return <RecetasView role={role} />;
+    case 'planificacion': return <PlanificacionView role={role} usuario={usuario} />;
+    case 'compras': return <ComprasView role={role} />;
+    case 'asistencia': return <AsistenciaView role={role} usuario={usuario} />;
+    case 'notas': return <NotasView role={role} usuario={usuario} />;
+    case 'usuarios': return <UsuariosView />;
+    default: return <DashboardView usuario={usuario} />;
+  }
+}
+
+function AppShell() {
+  const [authUser, setAuthUser] = useState(undefined);
+  const [usuario, setUsuario] = useState(null);
+  const [vista, setVista] = useState('dashboard');
+
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((u) => setAuthUser(u));
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (!authUser) { setUsuario(null); return; }
+    const unsub = db.collection('usuarios').doc(authUser.uid).onSnapshot((snap) => {
+      setUsuario(snap.exists ? { id: snap.id, ...snap.data() } : null);
+    });
+    return unsub;
+  }, [authUser]);
+
+  if (authUser === undefined) return <LoadingSpinner full />;
+  if (!authUser) return <LoginScreen />;
+
+  if (!usuario) {
+    return (
+      <div className="login-screen">
+        <div className="login-card">
+          <p>Tu cuenta todavía no tiene un rol asignado. Pedile a un administrativo que te dé de alta en "Usuarios".</p>
+          <button className="btn" onClick={() => auth.signOut()} type="button">Salir</button>
+        </div>
+      </div>
+    );
+  }
+  if (!usuario.activo) {
+    return (
+      <div className="login-screen">
+        <div className="login-card">
+          <p>Tu cuenta está desactivada.</p>
+          <button className="btn" onClick={() => auth.signOut()} type="button">Salir</button>
+        </div>
+      </div>
+    );
+  }
+
+  const items = getNavItemsForRole(usuario.rol);
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="sidebar-brand">IGA</div>
+        <nav>
+          {items.map((item) => (
+            <button key={item.key} className={`nav-item ${vista === item.key ? 'active' : ''}`} onClick={() => setVista(item.key)} type="button">
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          <div>{usuario.nombre}</div>
+          <div className="muted">{ROLE_LABELS[usuario.rol]}</div>
+          <button className="btn-link" onClick={() => auth.signOut()} type="button">Cerrar sesión</button>
+          <div className="version">v{APP_VERSION}</div>
+        </div>
+      </aside>
+      <main className="content">
+        <VistaActual vista={vista} usuario={usuario} />
+      </main>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<AppShell />);

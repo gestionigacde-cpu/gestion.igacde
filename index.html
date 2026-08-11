@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IGA - Administración de Cocina</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="root">Cargando...</div>
+
+  <!-- 1. React + ReactDOM (UMD) -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+  <!-- 2. Babel Standalone: transforma JSX en el navegador, sin build -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- 3. Firebase SDK "compat" -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+  <!-- 4. Librerías puntuales (exportar lista de compras a Excel) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <!-- 5. Config de Firebase: deja auth y db como variables globales -->
+  <script src="firebase-config.js"></script>
+
+  <!-- 6. Roles y permisos -->
+  <script src="permissions.js"></script>
+
+  <!-- 7. La app -->
+  <script type="text/babel" data-presets="react" src="app.js"></script>
+</body>
+</html>
