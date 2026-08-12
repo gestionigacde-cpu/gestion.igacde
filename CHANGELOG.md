@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.2 - Ocultar menú lateral
+- Nuevo botón (círculo con `‹` / `›`) para ocultar/mostrar el menú lateral, así vistas anchas como la Agenda pueden usar todo el ancho de la pantalla.
+- El botón no aparece al imprimir.
+- No requiere cambios en `firestore.rules` ni republicar nada en Firebase Console.
+
 ## v0.3.1 - Cantidades con decimales en Recetas
 - El campo "Cantidad" de cada ingrediente en una Receta ahora acepta hasta 4 decimales (antes el navegador rechazaba valores como 0.007 porque el paso estaba fijado en 0.01).
 - Se agregó "vaina" a la lista de unidades de Ingredientes (para casos como Vainilla), así queda disponible en el desplegable al editar.

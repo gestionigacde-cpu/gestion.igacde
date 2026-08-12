@@ -15,7 +15,7 @@
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.3.1';
+const APP_VERSION = '0.3.2';
 
 const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete', 'vaina'];
 
@@ -1525,6 +1525,7 @@ function AppShell() {
   const [authUser, setAuthUser] = useState(undefined);
   const [usuario, setUsuario] = useState(null);
   const [vista, setVista] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged((u) => setAuthUser(u));
@@ -1566,7 +1567,15 @@ function AppShell() {
   const items = getNavItemsForRole(usuario.rol);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
+      <button
+        className="sidebar-toggle no-print"
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        type="button"
+        title={sidebarOpen ? 'Ocultar menú' : 'Mostrar menú'}
+      >
+        {sidebarOpen ? '‹' : '›'}
+      </button>
       <aside className="sidebar">
         <div className="sidebar-brand">
           {logo ? <img src={logo} alt="IGA" className="sidebar-logo" /> : 'IGA'}
