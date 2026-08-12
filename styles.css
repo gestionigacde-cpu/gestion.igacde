@@ -96,7 +96,7 @@ h1, h2, h3 { margin: 0 0 8px; }
   margin: 0 auto;
 }
 
-.sidebar nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.sidebar nav { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
 
 .nav-item {
   background: none;
@@ -140,6 +140,7 @@ h1, h2, h3 { margin: 0 0 8px; }
   justify-content: space-between;
   margin-bottom: 16px;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .table-wrap {
@@ -380,6 +381,82 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
 .loading-full { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+
+/* ---------- Agenda semanal ---------- */
+.agenda-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.agenda-wrap {
+  overflow-x: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.agenda-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 900px;
+  table-layout: fixed;
+}
+
+.agenda-table th, .agenda-table td {
+  border: 1px solid var(--color-border);
+  padding: 6px;
+  vertical-align: top;
+  font-size: 0.85em;
+}
+
+.agenda-corner { background: var(--color-surface); width: 90px; }
+
+.agenda-day-header {
+  background: #efe9e2;
+  text-align: center;
+  font-weight: 700;
+  padding: 8px 4px;
+}
+
+.agenda-day-name { font-weight: 400; font-size: 0.85em; color: var(--color-text-muted); text-transform: uppercase; }
+
+.agenda-cocina-header {
+  background: #f5f1eb;
+  text-align: center;
+  font-size: 0.78em;
+  color: var(--color-text-muted);
+  padding: 4px;
+  min-width: 130px;
+}
+
+.agenda-turno-label {
+  background: #efe9e2;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.8em;
+  letter-spacing: 0.05em;
+}
+
+.agenda-cell { min-width: 130px; height: 1px; }
+
+.agenda-item {
+  color: #fff;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+
+.agenda-item:last-child { margin-bottom: 0; }
+
+.agenda-sala { font-weight: 700; font-size: 0.85em; text-transform: uppercase; opacity: 0.9; }
+
+.agenda-curso { font-weight: 600; margin-top: 2px; }
+
+.agenda-docente { opacity: 0.9; }
+
+.agenda-nombreclase { font-style: italic; opacity: 0.9; }
+
+.agenda-cantidad { margin-top: 2px; font-weight: 700; }
 
 /* ---------- Impresión (ej: lista de compras) ---------- */
 .print-header {

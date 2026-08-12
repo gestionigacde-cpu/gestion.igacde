@@ -2,8 +2,8 @@
 
 App interna sin servidor (Firebase + GitHub Pages) para que el departamento
 administrativo del Instituto Gastronómico de las Américas gestione Carreras,
-Cursos, Turnos, Clases, Alumnos, Recetas, la planificación semanal de
-grupos/recetas por clase y la Lista de Compras semanal.
+Cursos, Turnos, Salas, Cocinas, Clases, Alumnos, Recetas, la planificación
+semanal de grupos/recetas por clase, la Agenda y la Lista de Compras semanal.
 
 Arquitectura: HTML/JS/CSS estáticos, React 18 + Babel Standalone por CDN
 (sin build), Firebase Authentication + Firestore como backend. Sin Node,
@@ -16,16 +16,22 @@ de Firebase).
 - `firebase-config.js` — credenciales del proyecto Firebase.
 - `permissions.js` — roles y matriz de permisos (solo UX).
 - `app.js` — toda la app (componentes React, lógica, pantallas).
-- `styles.css` — estilos (incluye vista de impresión y buscador con autocompletado).
+- `styles.css` — estilos (incluye Agenda, impresión y buscador con autocompletado).
 - `firestore.rules` — reglas de seguridad reales (se publican en Firebase Console).
 - `CHANGELOG.md` — historial de versiones.
 
 ## Jerarquía académica
 
-**Carrera** (ej: Pastelería) → **Curso** (ej: 1er Curso, 2do Curso — nivel
-dentro de la carrera) → **Clase** (Curso + Turno + Día + Docente, recurrente
-semana a semana). Los **Alumnos** se inscriben en un Curso + Turno (una
-misma persona puede tener varias inscripciones activas a la vez).
+**Carrera** (ej: Pastelería) → **Curso** (ej: 1er Curso, 2do Curso) →
+**Clase** (Curso + Turno + Fecha real + Docente + Sala + Cocina).
+
+- **Sala**: aula donde se dicta la parte teórica.
+- **Cocina**: donde se hace la práctica.
+- Los **Alumnos** se inscriben en un Curso + Turno (una misma persona puede
+  tener varias inscripciones activas a la vez).
+- Cada **Clase** es una ocurrencia con fecha concreta (no una plantilla que
+  se repite sola) — así se arma la Agenda con calendario real y se pueden
+  manejar recuperatorios/cambios de sala sin romper nada.
 
 ## Puesta en marcha
 
@@ -37,79 +43,66 @@ misma persona puede tener varias inscripciones activas a la vez).
 
 ### 2. Conectar la app al proyecto
 
-1. En Firebase Console: ⚙ **Configuración del proyecto** → pestaña "General" → sección "Tus apps" → ícono `</>` (Web) → registrá una app (nombre, ej. "IGA Web").
-2. Te va a mostrar un snippet de configuración. **Importante:** si Firebase te muestra el formato moderno con `import ... from "firebase/app"`, no lo copies tal cual — nuestro `firebase-config.js` usa el SDK "compat" (scripts sueltos, sin `import`). Solo necesitás los valores (`apiKey`, `authDomain`, `projectId`, etc.), que también podés ver más abajo en esa misma pantalla listados individualmente.
-3. Abrí `firebase-config.js` en este proyecto y reemplazá los valores del objeto `firebaseConfig` por los tuyos, dejando el resto del archivo (`firebase.initializeApp(...)`, `const auth = ...`, `const db = ...`) tal cual.
+1. En Firebase Console: ⚙ **Configuración del proyecto** → pestaña "General" → sección "Tus apps" → ícono `</>` (Web) → registrá una app.
+2. **Importante:** si Firebase te muestra un snippet con `import ... from "firebase/app"`, no lo copies tal cual — nuestro `firebase-config.js` usa el SDK "compat" (scripts sueltos, sin `import`). Copiá solo los valores (`apiKey`, `authDomain`, etc.) al objeto `firebaseConfig` de `firebase-config.js`, dejando el resto del archivo tal cual.
 
 ### 3. Publicar las reglas de seguridad
 
-1. En Firebase Console: **Build → Firestore Database → Reglas**.
-2. Pegá el contenido de `firestore.rules` (de este repo) y publicá.
-3. Cada vez que cambies `firestore.rules` en el repo, hay que volver a pegarlo y publicarlo acá — no se sincroniza solo.
+1. **Build → Firestore Database → Reglas** → pegá el contenido de `firestore.rules` → **Publicar**.
+2. Cada vez que cambies `firestore.rules` en el repo, hay que volver a pegarlo y publicarlo acá.
 
 ### 4. Crear el primer usuario Admin (a mano)
 
-La app no puede crear su propio primer usuario (todavía nadie tiene permiso
-para crear usuarios). Se hace una única vez, directo desde la consola:
-
-1. **Authentication → Users → Add user** → cargá email y contraseña.
-2. Copiá el **UID** que le asignó.
-3. **Firestore Database → Iniciar colección** → ID de colección: `usuarios` → ID de documento: pegá el UID copiado → agregá los campos:
-   - `nombre` (string): tu nombre
-   - `email` (string): el mismo email
-   - `rol` (string): `admin`
-   - `activo` (boolean): `true`
-4. Guardá. Ya podés loguearte en la app con ese usuario y desde "Usuarios" vas a poder crear al resto (docentes, alumnos, compras) sin volver a tocar la consola.
+1. **Authentication → Users → Add user** → cargá email y contraseña → copiá el **UID**.
+2. **Firestore Database → Iniciar colección** `usuarios` → documento con ID = ese UID → campos `nombre`, `email`, `rol: "admin"`, `activo: true`.
+3. Ya podés loguearte y crear al resto de usuarios desde "Usuarios" en la app.
 
 ### 5. Subir el código a GitHub y activar GitHub Pages
 
-1. Creá un repositorio en GitHub y subí todos los archivos de este proyecto (`index.html`, `firebase-config.js` ya con tus credenciales reales, `permissions.js`, `app.js`, `styles.css`, `firestore.rules`, `README.md`, `CHANGELOG.md`).
-2. En el repo: **Settings → Pages** → "Build and deployment" → Source: **Deploy from a branch** → Branch: `main` / carpeta `/ (root)` → Save.
-3. GitHub te va a dar una URL pública (algo como `https://tu-usuario.github.io/tu-repo/`). Puede tardar 1-2 minutos en estar disponible la primera vez.
+1. Subí todos los archivos de este proyecto a un repo.
+2. **Settings → Pages** → Source: **Deploy from a branch** → `main` / `/ (root)`.
+3. Esperá 1-2 minutos a que se publique la URL.
 
-### 6. Autorizar el dominio de GitHub Pages en Firebase
+### 6. Autorizar el dominio en Firebase
 
-Si te saltás este paso, el login funciona en local pero falla en producción.
-
-1. Firebase Console → **Authentication → Settings → Authorized domains → Add domain**.
-2. Agregá `tu-usuario.github.io` (sin `https://` ni la ruta del repo).
+**Authentication → Settings → Authorized domains → Add domain** → `tu-usuario.github.io`.
 
 ### 7. Probar
 
-1. Abrí la URL de GitHub Pages.
-2. Iniciá sesión con el usuario Admin creado a mano.
-3. Cargá al menos: una Carrera, un Curso de esa Carrera, un Turno, un Docente, un Ingrediente y una Receta, para poder probar el flujo completo: Clases → Planificación semanal (grupos + receta) → Lista de compras.
-4. Desde "Configuración" subí el logo del instituto (opcional, pero recomendado).
+1. Cargá: Carreras, Cursos, Turnos, Salas, Cocinas, Docentes, Ingredientes y Recetas.
+2. Cargá Clases con fecha real, sala y cocina → mirá que aparezcan en "Agenda".
+3. Inscribí Alumnos en Curso+Turno.
+4. Probá el flujo completo: Planificación semanal → Lista de compras.
+5. Desde "Configuración" subí el logo del instituto.
 
 ## Flujo funcional (resumen)
 
-1. Admin carga catálogos: Carreras, Cursos (por carrera), Turnos, Docentes, Alumnos, Ingredientes, Recetas (con sus ingredientes y cantidades).
-2. Admin define las Clases (Curso + Turno + Día + Docente, recurrente semana a semana).
-3. Admin inscribe Alumnos en Curso + Turno (un alumno puede tener varias inscripciones), buscándolos por nombre con el campo de autocompletado.
-4. Cada semana, el Docente (o Admin) entra a "Planificación semanal", elige su Clase y la semana, define cuántos Grupos hay y qué Receta prepara cada uno.
-5. Admin entra a "Lista de compras", elige la semana, y genera la lista: el sistema suma los ingredientes de todas las recetas planificadas esa semana en todas las clases, en una única lista. Se puede exportar a Excel o imprimir (con el logo del instituto en el encabezado).
-6. El rol Compras entra con su propio usuario y ve/exporta esa lista (no genera ni edita catálogos).
-7. Docente registra Asistencia y Notas por clase; Alumno consulta su propio horario, notas y asistencia.
+1. Admin carga catálogos: Carreras, Cursos, Turnos, Salas, Cocinas, Docentes, Alumnos, Ingredientes, Recetas.
+2. Admin (o quien organiza el cronograma) va cargando las Clases semana a semana, cada una con su fecha, sala y cocina — la **Agenda** las va mostrando solas, ordenadas por día y cocina, sin tener que armar nada a mano.
+3. Admin inscribe Alumnos en Curso + Turno (buscándolos por nombre con autocompletado).
+4. El Docente (o Admin) entra a "Planificación semanal", elige la Clase, y define cuántos Grupos hay y qué Receta prepara cada uno.
+5. Admin entra a "Lista de compras", elige la semana, y genera la lista sumando ingredientes de todas las clases planificadas esa semana. Se puede exportar a Excel o imprimir (con el logo del instituto).
+6. El rol Compras entra con su propio usuario y ve/exporta esa lista.
+7. Docente registra Asistencia y Notas por clase; Alumno consulta su horario, notas y asistencia.
 
 ## Logo / branding
 
 Desde "Configuración" (solo Admin) se sube una imagen; se redimensiona y
 comprime en el navegador (sin Firebase Storage) y se guarda en Firestore.
-Se usa automáticamente en: pantalla de login, menú lateral, y encabezado
-de la Lista de Compras al imprimir (botón "Imprimir", `@media print` oculta
-menú y botones, deja solo el encabezado con logo y la tabla).
+Se usa en: login, menú lateral, y encabezado de la Lista de Compras al
+imprimir.
 
 ## Iterar
 
 No hay build: cada cambio se edita directo en los archivos, se sube al repo
-(`git add . && git commit -m "..." && git push`), y GitHub Pages lo publica
-solo en un par de minutos. Si después de subir un cambio seguís viendo la
-versión vieja, subí el número de `?v=N` en los `<script src="...">` de
-`index.html` para forzar que se pida una copia fresca.
+y GitHub Pages lo publica en un par de minutos. Si seguís viendo la versión
+vieja después de subir un cambio, subí el número de `?v=N` en los
+`<script src="...">` de `index.html`.
 
 ## Próximos pasos posibles (no incluidos en este scaffold)
 
-- Control de stock/inventario de ingredientes (descontar lo comprado).
-- Trazabilidad de qué cantidad de cada ingrediente corresponde a qué clase.
+- Control de stock/inventario de ingredientes.
+- Trazabilidad de ingredientes por clase.
 - Proveedor y costo estimado en la lista de compras.
-- Reportes/estadísticas (alumnos por carrera/curso/turno, asistencia agregada, etc.).
+- Reportes/estadísticas.
+- Copiar/duplicar una Clase para la semana siguiente con un clic (hoy hay que cargarla de nuevo).

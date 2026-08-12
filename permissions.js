@@ -22,9 +22,12 @@ const ROLE_LABELS = {
 // Vistas del menú y qué roles pueden verlas.
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Inicio', roles: [ROLES.ADMIN, ROLES.DOCENTE, ROLES.ALUMNO, ROLES.COMPRAS] },
+  { key: 'agenda', label: 'Agenda', roles: [ROLES.ADMIN, ROLES.DOCENTE, ROLES.ALUMNO] },
   { key: 'carreras', label: 'Carreras', roles: [ROLES.ADMIN] },
   { key: 'cursos', label: 'Cursos', roles: [ROLES.ADMIN] },
   { key: 'turnos', label: 'Turnos', roles: [ROLES.ADMIN] },
+  { key: 'salas', label: 'Salas', roles: [ROLES.ADMIN] },
+  { key: 'cocinas', label: 'Cocinas', roles: [ROLES.ADMIN] },
   { key: 'docentes', label: 'Docentes', roles: [ROLES.ADMIN] },
   { key: 'alumnos', label: 'Alumnos', roles: [ROLES.ADMIN] },
   { key: 'inscripciones', label: 'Inscripciones', roles: [ROLES.ADMIN] },
@@ -45,6 +48,8 @@ const PERMISSIONS = {
   carreras: { write: [ROLES.ADMIN] },
   cursos: { write: [ROLES.ADMIN] },
   turnos: { write: [ROLES.ADMIN] },
+  salas: { write: [ROLES.ADMIN] },
+  cocinas: { write: [ROLES.ADMIN] },
   docentes: { write: [ROLES.ADMIN] },
   alumnos: { write: [ROLES.ADMIN] },
   inscripciones: { write: [ROLES.ADMIN] },

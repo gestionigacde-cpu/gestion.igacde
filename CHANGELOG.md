@@ -1,37 +1,34 @@
 # Changelog
 
+## v0.3.0 - Salas, Cocinas y Agenda con calendario real
+- Nuevas entidades **Salas** (aula donde se dicta la parte teórica) y **Cocinas** (donde se hace la práctica) — son catálogos distintos, ambos se asignan a una Clase.
+- **Clase** cambia de "día de semana recurrente" a **fecha real** (calendario). Cada Clase ahora tiene: Curso, Turno, Fecha, Docente, Sala y Cocina.
+- Nueva vista **Agenda**: calendario semanal navegable (← Semana anterior / Hoy / Semana siguiente →) armado solo con las Clases ya cargadas — no hay que ubicar nada a mano. Columnas: día (con fecha) × Cocina. Filas: Turno. Cada celda muestra Sala, Curso, Docente, nombre de la clase y cantidad de alumnos inscriptos (calculada automáticamente, no se carga a mano). Colores por Carrera.
+- **Planificación semanal** se simplifica: ya no hay que elegir semana aparte, se deriva sola de la fecha de la Clase elegida (`planificaciones/{claseId}` en vez de `planificaciones/{claseId}_{semanaId}`).
+- **Asistencia**: el id del registro pasa a ser `{claseId}_{alumnoId}` (antes incluía la fecha aparte, ahora la fecha ya vive en la Clase).
+- `firestore.rules`: agregadas colecciones `salas` y `cocinas` (mismo patrón catálogo que `turnos`).
+
+### Migración de datos ya cargados (importante)
+Este cambio no es retrocompatible con los datos de prueba que ya hayas cargado:
+1. Las **Clases** viejas no tienen `fecha`, `salaId` ni `cocinaId` — no van a aparecer en la Agenda hasta que las edites y completes esos campos (cargá primero Salas y Cocinas).
+2. Las **Planificaciones** guardadas con el id viejo (`claseId_semanaId`) quedan huérfanas — hay que volver a cargarlas para esas clases (ahora con un solo clic, sin elegir semana).
+3. Los registros de **Asistencia** viejos (`claseId_fecha_alumnoId`) conviven sin problema con los nuevos, no se pisan ni se pierden, pero un mismo alumno/clase de antes y de ahora podría aparecer duplicado si se vuelve a tomar asistencia — no es grave, es solo por el cambio de formato de id.
+
 ## v0.2.1 - Buscador de alumnos + campo Documento
 - El campo "DNI" de Alumnos pasó a llamarse **Documento**.
-- Nuevo componente `AutocompleteSelect`: campo de texto que filtra a medida que se escribe, en vez de un `<select>` tradicional. Se usa para elegir Alumno en **Inscripciones** y en **Usuarios** (al vincular una ficha de alumno a un login) — pensado para cuando haya muchos alumnos cargados.
-- No requiere cambios en `firestore.rules` (no se tocó el modelo de datos, solo el nombre del campo y la UI).
-
-### Nota sobre el cambio de DNI a Documento
-Los alumnos que ya hayas cargado con la versión anterior tienen el dato guardado bajo el campo viejo (`dni`) y van a aparecer con "Documento" vacío. Hay que volver a abrirlos y cargar el valor en el campo nuevo una vez (no se pierde ningún otro dato).
+- Nuevo componente `AutocompleteSelect`: campo de texto que filtra a medida que se escribe, en vez de un `<select>` tradicional. Se usa para elegir Alumno en **Inscripciones** y en **Usuarios** (al vincular una ficha de alumno a un login).
 
 ## v0.2.0 - Cursos + Logo/Branding + Impresión
-- Nueva entidad **Cursos**: cada Carrera tiene uno o más Cursos (ej: "Pastelería 1er Curso"). Las Clases ahora se arman sobre Curso + Turno + Día + Docente, y las Inscripciones son Alumno + Curso + Turno (antes era directo sobre Carrera).
-- Nuevo módulo **Configuración** (solo Admin): subir el logo del instituto. Se redimensiona/comprime en el navegador (canvas) y se guarda como base64 en `config/branding` — sin Firebase Storage.
-- El logo se muestra en la pantalla de login, en el menú lateral, y en el encabezado de la Lista de Compras.
-- Nuevo botón **Imprimir** en Lista de Compras: vista con estilos `@media print` (oculta menú/botones, muestra encabezado con logo) lista para llevar en papel.
-- `firestore.rules`: agregadas colecciones `cursos` (catálogo, mismo patrón que carreras/turnos) y `config` (lectura pública, escritura solo Admin — el logo se ve hasta sin loguearse).
-- `index.html`: Babel Standalone fijado en versión `7.24.7` (antes apuntaba a "latest", lo que causaba errores intermitentes de parseo). Cache-busting `?v=3` en los archivos propios.
-
-### Migración de datos ya cargados
-Si ya habías cargado Carreras/Clases/Inscripciones con la versión anterior:
-1. Cargá primero los **Cursos** de cada Carrera (ej: "1er Curso", "2do Curso").
-2. Las **Clases** e **Inscripciones** viejas quedaron con `carreraId` en vez de `cursoId` — hay que volver a editarlas/cargarlas apuntando al Curso correspondiente (no hay migración automática en este scaffold).
+- Nueva entidad **Cursos**: cada Carrera tiene uno o más Cursos (ej: "Pastelería 1er Curso"). Las Inscripciones son Alumno + Curso + Turno (antes era directo sobre Carrera).
+- Nuevo módulo **Configuración** (solo Admin): subir el logo del instituto (base64 en Firestore, sin Storage). Se usa en login, sidebar y lista de compras.
+- Botón **Imprimir** en Lista de Compras con vista `@media print`.
+- `firestore.rules`: agregadas colecciones `cursos` y `config`.
+- `index.html`: Babel Standalone fijado en `7.24.7` (antes "latest").
 
 ## v0.1.0 - Primer scaffold funcional
-- Login con Firebase Authentication (email/contraseña) + recuperación de contraseña.
-- Roles: Administrativo, Docente, Alumno, Compras (usuarios/{uid}.rol).
+- Login con Firebase Authentication + roles (Administrativo, Docente, Alumno, Compras).
 - CRUD de catálogos: Carreras, Turnos, Docentes, Alumnos, Ingredientes, Clases.
-- Inscripciones (Alumno + Carrera + Turno, múltiples por alumno).
-- Recetas con ingredientes embebidos (cantidad por ejecución de la receta).
-- Planificación semanal por Clase: grupos y receta asignada a cada uno.
-- Generación automática de Lista de Compras semanal (agrega ingredientes de
-  todas las clases planificadas esa semana) + exportación a Excel.
-- Asistencia por clase/fecha (registro por alumno, corrección con nuevo registro).
-- Notas/evaluaciones por clase (historial acumulado, no se sobrescribe).
-- Alta de usuarios desde la app (Admin) sin cerrar su propia sesión, vía
-  instancia secundaria de Firebase.
-- firestore.rules reflejando la matriz de roles.
+- Recetas con ingredientes embebidos.
+- Planificación semanal (grupos + receta) y generación automática de Lista de Compras.
+- Asistencia y Notas por clase.
+- Alta de usuarios desde la app sin cerrar la sesión del Admin.

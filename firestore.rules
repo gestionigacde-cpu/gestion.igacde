@@ -9,8 +9,11 @@ rules_version = '2';
 // Firebase Authentication, relacionado por el UID).
 //
 // Jerarquía académica: Carrera -> Curso (ej: "Pastelería 1er Curso") ->
-// Clase (Curso + Turno + Día + Docente, recurrente semanal). Los Alumnos
-// se inscriben en un Curso + Turno (no directo en la Carrera).
+// Clase (Curso + Turno + Fecha + Docente + Sala + Cocina). Los Alumnos
+// se inscriben en un Curso + Turno.
+//
+// Sala = aula donde se dicta la parte teórica. Cocina = donde se hace la
+// práctica. Son dos catálogos distintos, ambos se le asignan a una Clase.
 //
 // docentes/{id} y alumnos/{id} son fichas de catálogo (nombre, email, etc).
 // usuarios/{uid} es la cuenta de login y puede referenciar a una ficha
@@ -81,8 +84,9 @@ service cloud.firestore {
     }
 
     // ---------- Catálogos simples ----------
-    // Carreras, Cursos, Turnos, Docentes, Alumnos, Ingredientes: lectura
-    // amplia para todo usuario activo del sistema, escritura solo admin.
+    // Carreras, Cursos, Turnos, Salas, Cocinas, Docentes, Alumnos,
+    // Ingredientes: lectura amplia para todo usuario activo, escritura
+    // solo admin.
     match /carreras/{id} {
       allow read: if isActive();
       allow write: if isAdmin();
@@ -95,6 +99,18 @@ service cloud.firestore {
     }
 
     match /turnos/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    // Sala = aula donde se dicta la parte teórica de la clase.
+    match /salas/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    // Cocina = donde se hace la práctica.
+    match /cocinas/{id} {
       allow read: if isActive();
       allow write: if isAdmin();
     }
@@ -125,7 +141,7 @@ service cloud.firestore {
       allow delete: if false; // dar de baja con activo:false
     }
 
-    // ---------- Clases (Curso + turno + día, recurrente semanal) ----------
+    // ---------- Clases (Curso + Turno + Fecha + Docente + Sala + Cocina) --
     match /clases/{id} {
       allow read: if isActive();
       allow write: if isAdmin();
@@ -138,8 +154,9 @@ service cloud.firestore {
     }
 
     // ---------- Planificación semanal (grupos + receta asignada) ----------
-    // Documento por clase+semana. El docente solo puede tocar la
-    // planificación de SUS clases (docenteId denormalizado en el doc).
+    // Un documento por Clase (la Clase ya tiene su propia fecha). El
+    // docente solo puede tocar la planificación de SUS clases (docenteId
+    // denormalizado en el doc).
     match /planificaciones/{id} {
       allow read: if isActive();
       allow create, update: if isAdmin() ||

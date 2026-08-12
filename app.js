@@ -6,32 +6,68 @@
 // antes (dejan auth, db, ROLES, PERMISSIONS, etc. como globales).
 //
 // Jerarquía académica: Carrera -> Curso (ej: "Pastelería 1er Curso") ->
-// Clase (Curso + Turno + Día + Docente, recurrente semanal). Los Alumnos
-// se inscriben en un Curso + Turno.
+// Clase (Curso + Turno + Fecha real + Docente + Sala + Cocina). Los
+// Alumnos se inscriben en un Curso + Turno.
+//
+// Sala = aula donde se dicta la parte teórica de la clase.
+// Cocina = donde se hace la práctica.
 // =====================================================================
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.2.1';
-
-const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+const APP_VERSION = '0.3.0';
 
 const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete'];
+
+const DIAS_CORTOS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
 // Semana en formato "YYYY-Www" (compatible con <input type="week">).
 // Es una aproximación práctica, no un cálculo ISO-8601 estricto — alcanza
 // para agrupar clases/compras semana a semana en una herramienta interna.
-function getSemanaActualInputValue() {
-  const now = new Date();
-  return inputWeekFromDate(now.toISOString().slice(0, 10));
-}
-
 function inputWeekFromDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   const jan1 = new Date(d.getFullYear(), 0, 1);
   const dayNum = Math.floor((d - jan1) / 86400000);
   const week = Math.ceil((dayNum + jan1.getDay() + 1) / 7);
   return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+// Devuelve el lunes de la semana de una fecha dada (para navegar la Agenda).
+function getMonday(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0 = domingo
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+function toISODate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatFechaCorta(date) {
+  return `${String(date.getDate()).padStart(2, '0')}-${MESES_CORTOS[date.getMonth()]}`;
+}
+
+// Color determinístico por id (ej: por Carrera), sin necesidad de que
+// alguien elija un color a mano. Mismo id -> mismo color siempre.
+const AGENDA_PALETTE = ['#2f9e64', '#e0791f', '#8e6fb0', '#c9a300', '#c0392b', '#3f7cac', '#00897b', '#c2185b', '#6d5842'];
+function colorForId(id) {
+  if (!id) return '#9a9a9a';
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  return AGENDA_PALETTE[Math.abs(hash) % AGENDA_PALETTE.length];
 }
 
 // Redimensiona/comprime una imagen en el navegador (canvas) y la devuelve
@@ -221,6 +257,13 @@ function FormField({ field, value, onChange }) {
       </label>
     );
   }
+  if (field.type === 'date') {
+    return (
+      <label>{field.label}
+        <input type="date" value={value || ''} onChange={(e) => onChange(e.target.value)} required={field.required} />
+      </label>
+    );
+  }
   return (
     <label>{field.label}
       <input type="text" value={value || ''} onChange={(e) => onChange(e.target.value)} required={field.required} />
@@ -239,9 +282,9 @@ function renderCellValue(val, field) {
 
 // ---------------------------------------------------------------------
 // CrudTable: tabla + modal de alta/edición genérico para colecciones
-// "catálogo" simples (carreras, cursos, turnos, docentes, alumnos,
-// ingredientes, clases). filterFn es opcional y solo acota qué se
-// MUESTRA en pantalla (no reemplaza las reglas de seguridad reales,
+// "catálogo" simples (carreras, cursos, turnos, salas, cocinas, docentes,
+// alumnos, ingredientes, clases). filterFn es opcional y solo acota qué
+// se MUESTRA en pantalla (no reemplaza las reglas de seguridad reales,
 // que viven en Firestore).
 // ---------------------------------------------------------------------
 function CrudTable({ title, collectionName, fields, role, extraDefault, filterFn }) {
@@ -378,6 +421,24 @@ function TurnosView({ role }) {
   return <CrudTable title="Turnos" collectionName="turnos" fields={fields} role={role} extraDefault={{ activo: true }} />;
 }
 
+// Sala = aula donde se dicta la parte teórica antes de entrar a la Cocina.
+function SalasView({ role }) {
+  const fields = [
+    { key: 'nombre', label: 'Nombre (ej: Sala 2)', type: 'text', required: true },
+    { key: 'activo', label: 'Activo', type: 'checkbox' },
+  ];
+  return <CrudTable title="Salas" collectionName="salas" fields={fields} role={role} extraDefault={{ activo: true }} />;
+}
+
+// Cocina = donde se hace la práctica.
+function CocinasView({ role }) {
+  const fields = [
+    { key: 'nombre', label: 'Nombre (ej: Cocina 1)', type: 'text', required: true },
+    { key: 'activo', label: 'Activo', type: 'checkbox' },
+  ];
+  return <CrudTable title="Cocinas" collectionName="cocinas" fields={fields} role={role} extraDefault={{ activo: true }} />;
+}
+
 function DocentesView({ role }) {
   const fields = [
     { key: 'nombre', label: 'Nombre', type: 'text', required: true },
@@ -405,11 +466,13 @@ function IngredientesView({ role }) {
   return <CrudTable title="Ingredientes" collectionName="ingredientes" fields={fields} role={role} />;
 }
 
-// Clase = Curso + Turno + Día + Docente, recurrente semana a semana.
+// Clase = Curso + Turno + Fecha real + Docente + Sala + Cocina.
 function ClasesView({ role, usuario }) {
   const [carreras] = useCollection('carreras', null, []);
   const [cursos] = useCollection('cursos', null, []);
   const [turnos] = useCollection('turnos', null, []);
+  const [salas] = useCollection('salas', null, []);
+  const [cocinas] = useCollection('cocinas', null, []);
   const [docentes] = useCollection('docentes', null, []);
   const [misInscripciones] = useCollection(
     'inscripciones',
@@ -426,7 +489,9 @@ function ClasesView({ role, usuario }) {
     { key: 'nombre', label: 'Nombre de la clase', type: 'text', required: true },
     { key: 'cursoId', label: 'Curso', type: 'select', options: cursos.map((c) => ({ value: c.id, label: nombreCurso(c) })) },
     { key: 'turnoId', label: 'Turno', type: 'select', options: turnos.map((t) => ({ value: t.id, label: t.nombre })) },
-    { key: 'diaSemana', label: 'Día', type: 'select', options: DIAS_SEMANA.map((d) => ({ value: d, label: d })) },
+    { key: 'fecha', label: 'Fecha', type: 'date', required: true },
+    { key: 'salaId', label: 'Sala (teórica)', type: 'select', options: salas.map((s) => ({ value: s.id, label: s.nombre })) },
+    { key: 'cocinaId', label: 'Cocina', type: 'select', options: cocinas.map((c) => ({ value: c.id, label: c.nombre })) },
     { key: 'docenteId', label: 'Docente', type: 'select', options: docentes.map((d) => ({ value: d.id, label: d.nombre })) },
     { key: 'activo', label: 'Activo', type: 'checkbox' },
   ];
@@ -439,6 +504,111 @@ function ClasesView({ role, usuario }) {
   }
 
   return <CrudTable title="Clases" collectionName="clases" fields={fields} role={role} extraDefault={{ activo: true }} filterFn={filterFn} />;
+}
+
+// ---------------------------------------------------------------------
+// Agenda semanal: calendario real, navegable semana a semana. Se arma
+// sola a partir de las Clases que ya se van cargando (no hay que ubicar
+// nada a mano). Columnas = Días (con fecha) x Cocina. Filas = Turno.
+// ---------------------------------------------------------------------
+function AgendaView() {
+  const [inicioSemana, setInicioSemana] = useState(() => getMonday(new Date()));
+  const dias = [0, 1, 2, 3, 4, 5].map((i) => addDays(inicioSemana, i)); // Lunes a Sábado
+  const inicioStr = toISODate(dias[0]);
+  const finStr = toISODate(dias[5]);
+
+  const [clases] = useCollection('clases', (ref) => ref.where('fecha', '>=', inicioStr).where('fecha', '<=', finStr), [inicioStr, finStr]);
+  const [cocinas] = useCollection('cocinas', null, []);
+  const [salas] = useCollection('salas', null, []);
+  const [turnos] = useCollection('turnos', null, []);
+  const [cursos] = useCollection('cursos', null, []);
+  const [carreras] = useCollection('carreras', null, []);
+  const [docentes] = useCollection('docentes', null, []);
+  const [inscripciones] = useCollection('inscripciones', (ref) => ref.where('activo', '==', true), []);
+
+  const nombreSala = (id) => (salas.find((s) => s.id === id) || {}).nombre || '';
+  const nombreDocente = (id) => (docentes.find((d) => d.id === id) || {}).nombre || '';
+  const cursoDe = (id) => cursos.find((c) => c.id === id);
+  const nombreCursoCompleto = (cursoId) => {
+    const curso = cursoDe(cursoId);
+    if (!curso) return '';
+    const carrera = carreras.find((c) => c.id === curso.carreraId);
+    return carrera ? `${carrera.nombre} - ${curso.nombre}` : curso.nombre;
+  };
+  const cantidadAlumnos = (cursoId, turnoId) =>
+    inscripciones.filter((i) => i.cursoId === cursoId && i.turnoId === turnoId).length;
+  const colorDeClase = (cl) => {
+    const curso = cursoDe(cl.cursoId);
+    return colorForId(curso ? curso.carreraId : cl.cursoId);
+  };
+
+  const cocinasActivas = cocinas.filter((c) => c.activo !== false);
+  const columnas = cocinasActivas.length > 0 ? cocinasActivas : [null];
+
+  return (
+    <div className="view">
+      <div className="view-header">
+        <h2>Agenda</h2>
+        <div className="agenda-nav">
+          <button className="btn" onClick={() => setInicioSemana(addDays(inicioSemana, -7))} type="button">← Semana anterior</button>
+          <button className="btn" onClick={() => setInicioSemana(getMonday(new Date()))} type="button">Hoy</button>
+          <button className="btn" onClick={() => setInicioSemana(addDays(inicioSemana, 7))} type="button">Semana siguiente →</button>
+        </div>
+      </div>
+
+      {turnos.length === 0 && <p className="empty">Cargá al menos un Turno para poder ver la agenda.</p>}
+
+      <div className="agenda-wrap">
+        <table className="agenda-table">
+          <thead>
+            <tr>
+              <th className="agenda-corner"></th>
+              {dias.map((d, i) => (
+                <th key={i} colSpan={columnas.length} className="agenda-day-header">
+                  <div>{formatFechaCorta(d)}</div>
+                  <div className="agenda-day-name">{DIAS_CORTOS[d.getDay()]}</div>
+                </th>
+              ))}
+            </tr>
+            <tr>
+              <th className="agenda-corner"></th>
+              {dias.map((d, i) => (
+                columnas.map((coc, ci) => (
+                  <th key={`${i}_${coc ? coc.id : ci}`} className="agenda-cocina-header">{coc ? coc.nombre : '—'}</th>
+                ))
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {turnos.map((turno) => (
+              <tr key={turno.id}>
+                <th className="agenda-turno-label">{turno.nombre}</th>
+                {dias.map((d) => {
+                  const fechaStr = toISODate(d);
+                  return columnas.map((coc, ci) => {
+                    const items = clases.filter((c) => c.fecha === fechaStr && c.turnoId === turno.id && (coc ? c.cocinaId === coc.id : true));
+                    return (
+                      <td key={`${fechaStr}_${coc ? coc.id : ci}`} className="agenda-cell">
+                        {items.map((cl) => (
+                          <div key={cl.id} className="agenda-item" style={{ background: colorDeClase(cl) }}>
+                            {cl.salaId && <div className="agenda-sala">{nombreSala(cl.salaId)}</div>}
+                            <div className="agenda-curso">{nombreCursoCompleto(cl.cursoId)}</div>
+                            <div className="agenda-docente">{nombreDocente(cl.docenteId)}</div>
+                            <div className="agenda-nombreclase">{cl.nombre}</div>
+                            <div className="agenda-cantidad">{cantidadAlumnos(cl.cursoId, cl.turnoId)} alumnos</div>
+                          </div>
+                        ))}
+                      </td>
+                    );
+                  });
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------
@@ -651,42 +821,42 @@ function RecetasView({ role }) {
 }
 
 // ---------------------------------------------------------------------
-// Planificación semanal: por Clase + Semana, cuántos Grupos hay y qué
-// Receta prepara cada uno. Acá nace el dato que arma la lista de compras.
-// ID de documento predecible: `${claseId}_${semanaId}`.
+// Planificación semanal: por Clase (la Clase ya tiene su propia fecha),
+// cuántos Grupos hay y qué Receta prepara cada uno. Acá nace el dato que
+// arma la lista de compras. ID de documento = claseId.
 // ---------------------------------------------------------------------
 function PlanificacionView({ usuario, role }) {
   const [clases] = useCollection('clases', null, []);
   const [recetas] = useCollection('recetas', null, []);
-  const [semana, setSemana] = useState(getSemanaActualInputValue());
   const [claseId, setClaseId] = useState('');
   const [grupos, setGrupos] = useState([]);
   const [cargando, setCargando] = useState(false);
 
-  const clasesVisibles = role === ROLES.DOCENTE ? clases.filter((c) => c.docenteId === usuario.docenteId) : clases;
+  const clasesVisibles = (role === ROLES.DOCENTE ? clases.filter((c) => c.docenteId === usuario.docenteId) : clases)
+    .slice()
+    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
 
   useEffect(() => {
-    if (!claseId || !semana) { setGrupos([]); return; }
-    const docId = `${claseId}_${semana}`;
+    if (!claseId) { setGrupos([]); return; }
     setCargando(true);
-    db.collection('planificaciones').doc(docId).get().then((snap) => {
+    db.collection('planificaciones').doc(claseId).get().then((snap) => {
       setGrupos(snap.exists ? snap.data().grupos || [] : []);
       setCargando(false);
     });
-  }, [claseId, semana]);
+  }, [claseId]);
 
   function addGrupo() { setGrupos([...grupos, { numero: grupos.length + 1, recetaId: '' }]); }
   function updateGrupo(i, recetaId) { setGrupos(grupos.map((g, idx) => (idx === i ? { ...g, recetaId } : g))); }
   function removeGrupo(i) { setGrupos(grupos.filter((_, idx) => idx !== i).map((g, idx) => ({ ...g, numero: idx + 1 }))); }
 
   async function guardar() {
-    if (!claseId || !semana) return alert('Elegí clase y semana.');
+    if (!claseId) return alert('Elegí una clase.');
     const clase = clases.find((c) => c.id === claseId);
-    const docId = `${claseId}_${semana}`;
     const gruposLimpios = grupos.filter((g) => g.recetaId);
+    const semanaId = clase.fecha ? inputWeekFromDate(clase.fecha) : null;
     try {
-      await db.collection('planificaciones').doc(docId).set({
-        claseId, semanaId: semana, docenteId: clase.docenteId, cursoId: clase.cursoId,
+      await db.collection('planificaciones').doc(claseId).set({
+        claseId, semanaId, docenteId: clase.docenteId, cursoId: clase.cursoId, fecha: clase.fecha || null,
         grupos: gruposLimpios,
         actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
       });
@@ -699,18 +869,17 @@ function PlanificacionView({ usuario, role }) {
   return (
     <div className="view">
       <h2>Planificación semanal</h2>
-      <p className="muted">Definí, para cada clase de la semana, cuántos grupos hay y qué receta prepara cada uno. De acá sale la lista de compras.</p>
+      <p className="muted">Elegí una clase (ya con su fecha propia) y definí cuántos grupos hay y qué receta prepara cada uno. De acá sale la lista de compras.</p>
       <div className="filters">
-        <label>Semana<input type="week" value={semana} onChange={(e) => setSemana(e.target.value)} /></label>
         <label>Clase
           <select value={claseId} onChange={(e) => setClaseId(e.target.value)}>
             <option value="">Elegir clase...</option>
-            {clasesVisibles.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            {clasesVisibles.map((c) => <option key={c.id} value={c.id}>{c.fecha ? `${c.fecha} — ` : ''}{c.nombre}</option>)}
           </select>
         </label>
       </div>
 
-      {claseId && semana && !cargando && (
+      {claseId && !cargando && (
         <div className="grupos-editor">
           <div className="view-header"><strong>Grupos</strong><button className="btn" onClick={addGrupo} type="button">+ Agregar grupo</button></div>
           {grupos.map((g, i) => (
@@ -723,7 +892,7 @@ function PlanificacionView({ usuario, role }) {
               <button className="btn-icon btn-danger" onClick={() => removeGrupo(i)} type="button">Quitar</button>
             </div>
           ))}
-          {grupos.length === 0 && <p className="muted">Todavía no hay grupos para esta clase/semana.</p>}
+          {grupos.length === 0 && <p className="muted">Todavía no hay grupos para esta clase.</p>}
           <button className="btn btn-primary" onClick={guardar} type="button">Guardar planificación</button>
         </div>
       )}
@@ -733,13 +902,14 @@ function PlanificacionView({ usuario, role }) {
 
 // ---------------------------------------------------------------------
 // Lista de compras semanal: agrega ingredientes de todas las
-// planificaciones de la semana. Se genera/regenera a demanda (no hay
-// Cloud Functions), y se guarda como snapshot en listasCompra/{semanaId}.
+// planificaciones de la semana (semanaId se calcula solo, a partir de la
+// fecha de cada Clase). Se genera/regenera a demanda (no hay Cloud
+// Functions), y se guarda como snapshot en listasCompra/{semanaId}.
 // Incluye vista imprimible (con logo) para llevar en papel a compras.
 // ---------------------------------------------------------------------
 function ComprasView({ role }) {
   const logo = useBranding();
-  const [semana, setSemana] = useState(getSemanaActualInputValue());
+  const [semana, setSemana] = useState(() => inputWeekFromDate(toISODate(new Date())));
   const [lista, setLista] = useState(null);
   const [generando, setGenerando] = useState(false);
   const puedeGenerar = role === ROLES.ADMIN;
@@ -864,7 +1034,6 @@ function ComprasView({ role }) {
 function AsistenciaView({ usuario, role }) {
   const [clases] = useCollection('clases', null, []);
   const [claseId, setClaseId] = useState('');
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
   const [alumnosClase, setAlumnosClase] = useState([]);
   const [presentes, setPresentes] = useState({});
   const [misAsistencias] = useCollection(
@@ -873,7 +1042,9 @@ function AsistenciaView({ usuario, role }) {
     [role, usuario.alumnoId]
   );
 
-  const clasesVisibles = role === ROLES.DOCENTE ? clases.filter((c) => c.docenteId === usuario.docenteId) : clases;
+  const clasesVisibles = (role === ROLES.DOCENTE ? clases.filter((c) => c.docenteId === usuario.docenteId) : clases)
+    .slice()
+    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
 
   useEffect(() => {
     if (role === ROLES.ALUMNO) return;
@@ -888,22 +1059,23 @@ function AsistenciaView({ usuario, role }) {
         Promise.all(insc.map((i) => db.collection('alumnos').doc(i.alumnoId).get())).then((alSnaps) => {
           const list = alSnaps.filter((s) => s.exists).map((s) => ({ id: s.id, ...s.data() }));
           setAlumnosClase(list);
-          db.collection('asistencias').where('claseId', '==', claseId).where('fecha', '==', fecha).get().then((asnap) => {
+          db.collection('asistencias').where('claseId', '==', claseId).get().then((asnap) => {
             const p = {};
             asnap.forEach((d) => { p[d.data().alumnoId] = d.data().presente; });
             setPresentes(p);
           });
         });
       });
-  }, [claseId, fecha, clases, role]);
+  }, [claseId, clases, role]);
 
   async function guardarAsistencia() {
     const clase = clases.find((c) => c.id === claseId);
     if (!clase) return;
-    const semanaId = inputWeekFromDate(fecha);
+    const fecha = clase.fecha;
+    const semanaId = fecha ? inputWeekFromDate(fecha) : null;
     try {
       await Promise.all(alumnosClase.map((al) => {
-        const id = `${claseId}_${fecha}_${al.id}`;
+        const id = `${claseId}_${al.id}`;
         return db.collection('asistencias').doc(id).set({
           claseId, docenteId: clase.docenteId, alumnoId: al.id, fecha, semanaId,
           presente: !!presentes[al.id],
@@ -939,10 +1111,9 @@ function AsistenciaView({ usuario, role }) {
         <label>Clase
           <select value={claseId} onChange={(e) => setClaseId(e.target.value)}>
             <option value="">Elegir clase...</option>
-            {clasesVisibles.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            {clasesVisibles.map((c) => <option key={c.id} value={c.id}>{c.fecha ? `${c.fecha} — ` : ''}{c.nombre}</option>)}
           </select>
         </label>
-        <label>Fecha<input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></label>
       </div>
       {claseId && (
         <div className="table-wrap">
@@ -982,7 +1153,9 @@ function NotasView({ usuario, role }) {
     [role, usuario.alumnoId]
   );
 
-  const clasesVisibles = role === ROLES.DOCENTE ? clases.filter((c) => c.docenteId === usuario.docenteId) : clases;
+  const clasesVisibles = (role === ROLES.DOCENTE ? clases.filter((c) => c.docenteId === usuario.docenteId) : clases)
+    .slice()
+    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
 
   useEffect(() => {
     if (role === ROLES.ALUMNO || !claseId) { setAlumnosClase([]); return; }
@@ -1046,7 +1219,7 @@ function NotasView({ usuario, role }) {
         <label>Clase
           <select value={claseId} onChange={(e) => setClaseId(e.target.value)}>
             <option value="">Elegir clase...</option>
-            {clasesVisibles.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            {clasesVisibles.map((c) => <option key={c.id} value={c.id}>{c.fecha ? `${c.fecha} — ` : ''}{c.nombre}</option>)}
           </select>
         </label>
       </div>
@@ -1325,9 +1498,12 @@ function VistaActual({ vista, usuario }) {
   const role = usuario.rol;
   switch (vista) {
     case 'dashboard': return <DashboardView usuario={usuario} />;
+    case 'agenda': return <AgendaView />;
     case 'carreras': return <CarrerasView role={role} />;
     case 'cursos': return <CursosView role={role} />;
     case 'turnos': return <TurnosView role={role} />;
+    case 'salas': return <SalasView role={role} />;
+    case 'cocinas': return <CocinasView role={role} />;
     case 'docentes': return <DocentesView role={role} />;
     case 'alumnos': return <AlumnosView role={role} />;
     case 'inscripciones': return <InscripcionesView role={role} />;
