@@ -75,24 +75,18 @@ service cloud.firestore {
     }
 
     // ---------- usuarios ----------
-    // Cada usuario puede leer su propio documento (para saber su rol).
-    // Solo admin gestiona altas/bajas de usuarios desde la app.
     match /usuarios/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
       allow create, update: if isAdmin();
-      allow delete: if false; // dar de baja con activo:false, no borrar
+      allow delete: if false;
     }
 
     // ---------- Catálogos simples ----------
-    // Carreras, Cursos, Turnos, Salas, Cocinas, Docentes, Alumnos,
-    // Ingredientes: lectura amplia para todo usuario activo, escritura
-    // solo admin.
     match /carreras/{id} {
       allow read: if isActive();
       allow write: if isAdmin();
     }
 
-    // Curso = nivel/año dentro de una Carrera (ej: "Pastelería 1er Curso").
     match /cursos/{id} {
       allow read: if isActive();
       allow write: if isAdmin();
@@ -103,13 +97,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Sala = aula donde se dicta la parte teórica de la clase.
     match /salas/{id} {
       allow read: if isActive();
       allow write: if isAdmin();
     }
 
-    // Cocina = donde se hace la práctica.
     match /cocinas/{id} {
       allow read: if isActive();
       allow write: if isAdmin();
@@ -138,25 +130,22 @@ service cloud.firestore {
         (isAlumno() && resource.data.alumnoId == miAlumnoId())
       );
       allow create, update: if isAdmin();
-      allow delete: if false; // dar de baja con activo:false
+      allow delete: if false;
     }
 
-    // ---------- Clases (Curso + Turno + Fecha + Docente + Sala + Cocina) --
+    // ---------- Clases ----------
     match /clases/{id} {
       allow read: if isActive();
       allow write: if isAdmin();
     }
 
-    // ---------- Recetas (con ingredientes embebidos) ----------
+    // ---------- Recetas ----------
     match /recetas/{id} {
       allow read: if isActive();
       allow write: if isAdmin();
     }
 
-    // ---------- Planificación semanal (grupos + receta asignada) ----------
-    // Un documento por Clase (la Clase ya tiene su propia fecha). El
-    // docente solo puede tocar la planificación de SUS clases (docenteId
-    // denormalizado en el doc).
+    // ---------- Planificación semanal ----------
     match /planificaciones/{id} {
       allow read: if isActive();
       allow create, update: if isAdmin() ||
@@ -164,17 +153,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ---------- Lista de compras semanal (generada) ----------
-    // Se genera/regenera desde la app (admin) agregando ingredientes de
-    // todas las planificaciones de la semana. Compras solo lee.
+    // ---------- Lista de compras semanal ----------
     match /listasCompra/{semanaId} {
       allow read: if isAdmin() || isCompras();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
-    // ---------- Asistencia (transaccional) ----------
-    // Se corrige con un registro nuevo si hace falta, no se borra.
+    // ---------- Asistencia ----------
     match /asistencias/{id} {
       allow read: if isActive() && (
         isAdmin() ||
@@ -188,7 +174,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ---------- Notas / calificaciones (transaccional) ----------
+    // ---------- Notas ----------
     match /notas/{id} {
       allow read: if isActive() && (
         isAdmin() ||
@@ -202,9 +188,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ---------- Configuración / branding (ej: logo del instituto) ----------
-    // Lectura pública a propósito: el logo se muestra hasta en la pantalla
-    // de login, antes de que exista una sesión. No hay datos sensibles acá.
+    // ---------- Configuración / branding ----------
     match /config/{docId} {
       allow read: if true;
       allow write: if isAdmin();

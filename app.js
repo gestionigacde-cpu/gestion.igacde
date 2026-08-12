@@ -15,9 +15,9 @@
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.3.0';
+const APP_VERSION = '0.3.1';
 
-const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete'];
+const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete', 'vaina'];
 
 const DIAS_CORTOS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -803,11 +803,11 @@ function RecetasView({ role }) {
                     <option value="">Elegir ingrediente...</option>
                     {ingredientesCat.map((ic) => <option key={ic.id} value={ic.id}>{ic.nombre} ({ic.unidadMedida})</option>)}
                   </select>
-                  <input type="number" min="0" step="0.01" placeholder="Cantidad por ejecución" value={it.cantidad} onChange={(e) => updateRow(i, { cantidad: e.target.value })} />
+                  <input type="number" min="0" step="0.0001" placeholder="Cantidad por ejecución" value={it.cantidad} onChange={(e) => updateRow(i, { cantidad: e.target.value })} />
                   <button type="button" className="btn-icon btn-danger" onClick={() => removeRow(i)}>Quitar</button>
                 </div>
               ))}
-              {items.length === 0 && <p className="muted">Agregá los ingredientes que necesita esta receta (cantidad por cada vez que un grupo la prepara).</p>}
+              {items.length === 0 && <p className="muted">Agregá los ingredientes que necesita esta receta (cantidad por cada vez que un grupo la prepara, hasta 4 decimales).</p>}
             </div>
             <div className="form-actions">
               <button type="button" className="btn" onClick={() => setModalOpen(false)}>Cancelar</button>
@@ -1028,8 +1028,8 @@ function ComprasView({ role }) {
 
 // ---------------------------------------------------------------------
 // Asistencia (transaccional: se corrige con un registro nuevo, no se
-// borra). ID predecible `${claseId}_${fecha}_${alumnoId}` para que
-// volver a guardar el mismo día actualice en vez de duplicar.
+// borra). ID predecible `${claseId}_${alumnoId}` (la Clase ya tiene su
+// propia fecha, no hace falta agregarla al id).
 // ---------------------------------------------------------------------
 function AsistenciaView({ usuario, role }) {
   const [clases] = useCollection('clases', null, []);
