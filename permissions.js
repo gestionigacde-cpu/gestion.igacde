@@ -25,6 +25,7 @@ const NAV_ITEMS = [
   { key: 'agenda', label: 'Agenda', roles: [ROLES.ADMIN, ROLES.DOCENTE, ROLES.ALUMNO] },
   { key: 'carreras', label: 'Carreras', roles: [ROLES.ADMIN] },
   { key: 'cursos', label: 'Cursos', roles: [ROLES.ADMIN] },
+  { key: 'secciones', label: 'Secciones', roles: [ROLES.ADMIN] },
   { key: 'turnos', label: 'Turnos', roles: [ROLES.ADMIN] },
   { key: 'salas', label: 'Salas', roles: [ROLES.ADMIN] },
   { key: 'cocinas', label: 'Cocinas', roles: [ROLES.ADMIN] },
@@ -47,6 +48,7 @@ const NAV_ITEMS = [
 const PERMISSIONS = {
   carreras: { write: [ROLES.ADMIN] },
   cursos: { write: [ROLES.ADMIN] },
+  secciones: { write: [ROLES.ADMIN] },
   turnos: { write: [ROLES.ADMIN] },
   salas: { write: [ROLES.ADMIN] },
   cocinas: { write: [ROLES.ADMIN] },

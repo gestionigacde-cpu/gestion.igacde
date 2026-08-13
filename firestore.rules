@@ -9,8 +9,10 @@ rules_version = '2';
 // Firebase Authentication, relacionado por el UID).
 //
 // Jerarquía académica: Carrera -> Curso (ej: "Pastelería 1er Curso") ->
-// Clase (Curso + Turno + Fecha + Docente + Sala + Cocina). Los Alumnos
-// se inscriben en un Curso + Turno.
+// Clase (Curso + Sección opcional + Turno + Fecha + Docente + Sala +
+// Cocina). Los Alumnos se inscriben en un Curso (+ Sección opcional) +
+// Turno. Sección = subdivisión de un Curso, sin límite, independiente
+// del Turno (varias Secciones pueden compartir el mismo horario).
 //
 // Sala = aula donde se dicta la parte teórica. Cocina = donde se hace la
 // práctica. Son dos catálogos distintos, ambos se le asignan a una Clase.
@@ -88,6 +90,11 @@ service cloud.firestore {
     }
 
     match /cursos/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    match /secciones/{id} {
       allow read: if isActive();
       allow write: if isAdmin();
     }

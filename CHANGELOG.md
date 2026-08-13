@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.4.0 - Secciones (subdivisión de Curso)
+- Nueva entidad **Secciones**: subdivisión de un Curso cuando hay más de un grupo cursando lo mismo (ej: "1er Curso Sección A", "Sección B"), sin límite de cantidad.
+- Independiente del Turno: varias Secciones pueden compartir el mismo horario (mismo Curso+Turno, distinto docente/aula/cocina).
+- Es **opcional**: si un Curso no tiene Secciones cargadas, todo sigue funcionando igual que antes con solo Curso+Turno.
+- **Clases**: nuevo campo Sección (se filtra solo, según el Curso elegido).
+- **Inscripciones**: nuevo campo Sección opcional (aparece solo si el Curso tiene Secciones cargadas).
+- **Agenda**: muestra la Sección en cada clase (cuando tiene una asignada) y la cantidad de alumnos ahora se calcula por Curso+Turno+Sección.
+- **Asistencia/Notas**: si la Clase tiene Sección asignada, solo aparecen los alumnos inscriptos en esa Sección; si no, se comporta como antes (todos los del Curso+Turno).
+- `firestore.rules`: agregada colección `secciones`.
+
+### Migración de datos ya cargados (importante)
+1. Las **Clases** e **Inscripciones** viejas no tienen Sección — van a seguir funcionando igual (se tratan como "sin Sección", cuentan todos los alumnos del Curso+Turno).
+2. Si en un Curso necesitás separar en grupos, cargá primero las Secciones correspondientes y después editá las Clases/Inscripciones para asignarlas.
+3. No requiere republicar `firestore.rules` si no vas a usar Secciones todavía, pero si las usás sí hay que republicar (agregó la colección `secciones`).
+
 ## v0.3.2 - Ocultar menú lateral
 - Nuevo botón (círculo con `‹` / `›`) para ocultar/mostrar el menú lateral, así vistas anchas como la Agenda pueden usar todo el ancho de la pantalla.
 - El botón no aparece al imprimir.

@@ -24,11 +24,18 @@ de Firebase).
 ## Jerarquía académica
 
 **Carrera** (ej: Pastelería) → **Curso** (ej: 1er Curso, 2do Curso) →
-**Clase** (Curso + Turno + Fecha real + Docente + Sala + Cocina).
+**Sección** (opcional, ej: A, B — sin límite) → **Clase** (Curso + Sección
++ Turno + Fecha real + Docente + Sala + Cocina).
 
+- **Sección**: subdivisión de un Curso cuando hay más de un grupo cursando
+  lo mismo (ej: "1er Curso Sección A" y "1er Curso Sección B"). Es
+  independiente del Turno: varias Secciones pueden compartir el mismo
+  horario (mismo Curso+Turno, distinto docente/aula/cocina). Es opcional —
+  si un Curso no tiene Secciones cargadas, se sigue usando solo Curso+Turno
+  como antes.
 - **Sala**: aula donde se dicta la parte teórica.
 - **Cocina**: donde se hace la práctica.
-- Los **Alumnos** se inscriben en un Curso + Turno.
+- Los **Alumnos** se inscriben en un Curso (+ Sección si corresponde) + Turno.
 - Cada **Clase** es una ocurrencia con fecha concreta (no una plantilla que
   se repite sola) — así se arma la Agenda con calendario real.
 
@@ -64,10 +71,10 @@ Subí los archivos al repo → **Settings → Pages** → `main` / `/ (root)`.
 
 ### 7. Probar y cargar datos
 
-1. Cargá: Carreras, Cursos, Turnos, Salas, Cocinas, Docentes, Ingredientes y Recetas.
+1. Cargá: Carreras, Cursos, (Secciones si un Curso tiene más de un grupo), Turnos, Salas, Cocinas, Docentes, Ingredientes y Recetas.
 2. Si tenés muchos ingredientes, usá `seed-ingredientes.js` pegándolo en la consola del navegador logueado como Admin (ver instrucciones dentro del archivo) — no duplica lo que ya exista.
-3. Cargá Clases con fecha real, sala y cocina → confirmá que aparezcan en "Agenda".
-4. Inscribí Alumnos en Curso+Turno (buscador con autocompletado).
+3. Cargá Clases con fecha real, sala y cocina (y Sección si corresponde) → confirmá que aparezcan en "Agenda".
+4. Inscribí Alumnos en Curso+Turno (+ Sección si corresponde) — buscador con autocompletado.
 5. Probá el flujo: Planificación semanal → Lista de compras.
 6. Desde "Configuración" subí el logo del instituto.
 

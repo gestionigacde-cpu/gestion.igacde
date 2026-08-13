@@ -491,6 +491,8 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .agenda-curso { font-weight: 600; margin-top: 2px; }
 
+.agenda-seccion { font-size: 0.85em; opacity: 0.9; }
+
 .agenda-docente { opacity: 0.9; }
 
 .agenda-nombreclase { font-style: italic; opacity: 0.9; }

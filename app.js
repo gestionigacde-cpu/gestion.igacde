@@ -6,16 +6,19 @@
 // antes (dejan auth, db, ROLES, PERMISSIONS, etc. como globales).
 //
 // Jerarquía académica: Carrera -> Curso (ej: "Pastelería 1er Curso") ->
-// Clase (Curso + Turno + Fecha real + Docente + Sala + Cocina). Los
-// Alumnos se inscriben en un Curso + Turno.
+// Clase (Curso + Sección opcional + Turno + Fecha real + Docente + Sala +
+// Cocina). Los Alumnos se inscriben en un Curso (+ Sección opcional) + Turno.
 //
+// Sección = subdivisión de un Curso (ej: 1er Curso Sección A, Sección B,
+// sin límite), independiente del Turno: varias Secciones pueden compartir
+// el mismo horario (mismo Curso+Turno, distinto docente/aula/cocina).
 // Sala = aula donde se dicta la parte teórica de la clase.
 // Cocina = donde se hace la práctica.
 // =====================================================================
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.3.2';
+const APP_VERSION = '0.4.0';
 
 const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete', 'vaina'];
 
@@ -225,7 +228,7 @@ function AutocompleteSelect({ options, value, onChange, placeholder }) {
   );
 }
 
-function FormField({ field, value, onChange }) {
+function FormField({ field, value, onChange, form }) {
   if (field.type === 'textarea') {
     return (
       <label>{field.label}
@@ -234,11 +237,14 @@ function FormField({ field, value, onChange }) {
     );
   }
   if (field.type === 'select') {
+    // dynamicOptions: para selects que dependen de otro campo del mismo
+    // formulario (ej: Sección depende del Curso elegido).
+    const opts = field.dynamicOptions ? field.dynamicOptions(form || {}) : (field.options || []);
     return (
       <label>{field.label}
         <select value={value || ''} onChange={(e) => onChange(e.target.value)} required={field.required}>
           <option value="">Elegir...</option>
-          {(field.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
     );
@@ -309,6 +315,17 @@ function CrudTable({ title, collectionName, fields, role, extraDefault, filterFn
     setModalOpen(true);
   }
 
+  // Si un campo tiene `clears` (ej: cursoId limpia seccionId), al cambiarlo
+  // se vacían esos otros campos para no dejar una combinación inválida.
+  function setFieldValue(key, val) {
+    const field = fields.find((f) => f.key === key);
+    setForm((prev) => {
+      const next = { ...prev, [key]: val };
+      if (field && field.clears) field.clears.forEach((k) => { next[k] = ''; });
+      return next;
+    });
+  }
+
   async function guardar(e) {
     e.preventDefault();
     const data = {};
@@ -376,7 +393,7 @@ function CrudTable({ title, collectionName, fields, role, extraDefault, filterFn
         <Modal title={editing ? 'Editar' : 'Nuevo'} onClose={() => setModalOpen(false)}>
           <form onSubmit={guardar} className="form">
             {fields.map((f) => (
-              <FormField key={f.key} field={f} value={form[f.key]} onChange={(v) => setForm({ ...form, [f.key]: v })} />
+              <FormField key={f.key} field={f} value={form[f.key]} onChange={(v) => setFieldValue(f.key, v)} form={form} />
             ))}
             <div className="form-actions">
               <button type="button" className="btn" onClick={() => setModalOpen(false)}>Cancelar</button>
@@ -411,6 +428,24 @@ function CursosView({ role }) {
     { key: 'activo', label: 'Activo', type: 'checkbox' },
   ];
   return <CrudTable title="Cursos" collectionName="cursos" fields={fields} role={role} extraDefault={{ activo: true }} />;
+}
+
+// Sección = subdivisión de un Curso (ej: 1er Curso Sección A, Sección B...),
+// sin límite de cantidad. Independiente del Turno: la misma Sección puede
+// compartir horario con otra (mismo Turno, distinto docente/aula/cocina).
+function SeccionesView({ role }) {
+  const [cursos] = useCollection('cursos', null, []);
+  const [carreras] = useCollection('carreras', null, []);
+  const nombreCurso = (curso) => {
+    const carrera = carreras.find((c) => c.id === curso.carreraId);
+    return carrera ? `${carrera.nombre} - ${curso.nombre}` : curso.nombre;
+  };
+  const fields = [
+    { key: 'nombre', label: 'Nombre (ej: A)', type: 'text', required: true },
+    { key: 'cursoId', label: 'Curso', type: 'select', options: cursos.map((c) => ({ value: c.id, label: nombreCurso(c) })), required: true },
+    { key: 'activo', label: 'Activo', type: 'checkbox' },
+  ];
+  return <CrudTable title="Secciones" collectionName="secciones" fields={fields} role={role} extraDefault={{ activo: true }} />;
 }
 
 function TurnosView({ role }) {
@@ -466,10 +501,11 @@ function IngredientesView({ role }) {
   return <CrudTable title="Ingredientes" collectionName="ingredientes" fields={fields} role={role} />;
 }
 
-// Clase = Curso + Turno + Fecha real + Docente + Sala + Cocina.
+// Clase = Curso + (Sección opcional) + Turno + Fecha real + Docente + Sala + Cocina.
 function ClasesView({ role, usuario }) {
   const [carreras] = useCollection('carreras', null, []);
   const [cursos] = useCollection('cursos', null, []);
+  const [secciones] = useCollection('secciones', null, []);
   const [turnos] = useCollection('turnos', null, []);
   const [salas] = useCollection('salas', null, []);
   const [cocinas] = useCollection('cocinas', null, []);
@@ -487,7 +523,8 @@ function ClasesView({ role, usuario }) {
 
   const fields = [
     { key: 'nombre', label: 'Nombre de la clase', type: 'text', required: true },
-    { key: 'cursoId', label: 'Curso', type: 'select', options: cursos.map((c) => ({ value: c.id, label: nombreCurso(c) })) },
+    { key: 'cursoId', label: 'Curso', type: 'select', options: cursos.map((c) => ({ value: c.id, label: nombreCurso(c) })), clears: ['seccionId'] },
+    { key: 'seccionId', label: 'Sección (opcional)', type: 'select', dynamicOptions: (form) => secciones.filter((s) => s.cursoId === form.cursoId).map((s) => ({ value: s.id, label: s.nombre })) },
     { key: 'turnoId', label: 'Turno', type: 'select', options: turnos.map((t) => ({ value: t.id, label: t.nombre })) },
     { key: 'fecha', label: 'Fecha', type: 'date', required: true },
     { key: 'salaId', label: 'Sala (teórica)', type: 'select', options: salas.map((s) => ({ value: s.id, label: s.nombre })) },
@@ -499,8 +536,8 @@ function ClasesView({ role, usuario }) {
   let filterFn = null;
   if (role === ROLES.DOCENTE) filterFn = (c) => c.docenteId === usuario.docenteId;
   if (role === ROLES.ALUMNO) {
-    const combos = misInscripciones.map((i) => `${i.cursoId}_${i.turnoId}`);
-    filterFn = (c) => combos.includes(`${c.cursoId}_${c.turnoId}`);
+    const combos = misInscripciones.map((i) => `${i.cursoId}_${i.turnoId}_${i.seccionId || ''}`);
+    filterFn = (c) => combos.includes(`${c.cursoId}_${c.turnoId}_${c.seccionId || ''}`);
   }
 
   return <CrudTable title="Clases" collectionName="clases" fields={fields} role={role} extraDefault={{ activo: true }} filterFn={filterFn} />;
@@ -522,11 +559,13 @@ function AgendaView() {
   const [salas] = useCollection('salas', null, []);
   const [turnos] = useCollection('turnos', null, []);
   const [cursos] = useCollection('cursos', null, []);
+  const [secciones] = useCollection('secciones', null, []);
   const [carreras] = useCollection('carreras', null, []);
   const [docentes] = useCollection('docentes', null, []);
   const [inscripciones] = useCollection('inscripciones', (ref) => ref.where('activo', '==', true), []);
 
   const nombreSala = (id) => (salas.find((s) => s.id === id) || {}).nombre || '';
+  const nombreSeccion = (id) => (secciones.find((s) => s.id === id) || {}).nombre || '';
   const nombreDocente = (id) => (docentes.find((d) => d.id === id) || {}).nombre || '';
   const cursoDe = (id) => cursos.find((c) => c.id === id);
   const nombreCursoCompleto = (cursoId) => {
@@ -535,8 +574,8 @@ function AgendaView() {
     const carrera = carreras.find((c) => c.id === curso.carreraId);
     return carrera ? `${carrera.nombre} - ${curso.nombre}` : curso.nombre;
   };
-  const cantidadAlumnos = (cursoId, turnoId) =>
-    inscripciones.filter((i) => i.cursoId === cursoId && i.turnoId === turnoId).length;
+  const cantidadAlumnos = (cursoId, turnoId, seccionId) =>
+    inscripciones.filter((i) => i.cursoId === cursoId && i.turnoId === turnoId && (i.seccionId || '') === (seccionId || '')).length;
   const colorDeClase = (cl) => {
     const curso = cursoDe(cl.cursoId);
     return colorForId(curso ? curso.carreraId : cl.cursoId);
@@ -593,9 +632,10 @@ function AgendaView() {
                           <div key={cl.id} className="agenda-item" style={{ background: colorDeClase(cl) }}>
                             {cl.salaId && <div className="agenda-sala">{nombreSala(cl.salaId)}</div>}
                             <div className="agenda-curso">{nombreCursoCompleto(cl.cursoId)}</div>
+                            {cl.seccionId && <div className="agenda-seccion">Sección {nombreSeccion(cl.seccionId)}</div>}
                             <div className="agenda-docente">{nombreDocente(cl.docenteId)}</div>
                             <div className="agenda-nombreclase">{cl.nombre}</div>
-                            <div className="agenda-cantidad">{cantidadAlumnos(cl.cursoId, cl.turnoId)} alumnos</div>
+                            <div className="agenda-cantidad">{cantidadAlumnos(cl.cursoId, cl.turnoId, cl.seccionId)} alumnos</div>
                           </div>
                         ))}
                       </td>
@@ -612,15 +652,16 @@ function AgendaView() {
 }
 
 // ---------------------------------------------------------------------
-// Inscripciones (Alumno + Curso + Turno) - vista a medida
+// Inscripciones (Alumno + Curso + Sección opcional + Turno) - vista a medida
 // ---------------------------------------------------------------------
 function InscripcionesView({ role }) {
   const [inscripciones] = useCollection('inscripciones', null, []);
   const [alumnos] = useCollection('alumnos', null, []);
   const [carreras] = useCollection('carreras', null, []);
   const [cursos] = useCollection('cursos', null, []);
+  const [secciones] = useCollection('secciones', null, []);
   const [turnos] = useCollection('turnos', null, []);
-  const [form, setForm] = useState({ alumnoId: '', cursoId: '', turnoId: '' });
+  const [form, setForm] = useState({ alumnoId: '', cursoId: '', seccionId: '', turnoId: '' });
   const puedeEscribir = canWrite('inscripciones', role);
 
   const alumnoOptions = alumnos
@@ -635,14 +676,16 @@ function InscripcionesView({ role }) {
     const carrera = carreras.find((c) => c.id === curso.carreraId);
     return carrera ? `${carrera.nombre} - ${curso.nombre}` : curso.nombre;
   };
+  const nombreSeccion = (id) => (id ? (secciones.find((s) => s.id === id) || {}).nombre || id : '—');
   const nombreTurno = (id) => (turnos.find((t) => t.id === id) || {}).nombre || id;
+  const seccionesDelCurso = secciones.filter((s) => s.cursoId === form.cursoId);
 
   async function inscribir(e) {
     e.preventDefault();
-    if (!form.alumnoId || !form.cursoId || !form.turnoId) return alert('Completá los tres campos.');
+    if (!form.alumnoId || !form.cursoId || !form.turnoId) return alert('Completá alumno, curso y turno.');
     try {
       await db.collection('inscripciones').add({ ...form, activo: true, fechaAlta: firebase.firestore.FieldValue.serverTimestamp() });
-      setForm({ alumnoId: '', cursoId: '', turnoId: '' });
+      setForm({ alumnoId: '', cursoId: '', seccionId: '', turnoId: '' });
     } catch (err) {
       alert('Error: ' + err.message);
     }
@@ -667,10 +710,16 @@ function InscripcionesView({ role }) {
             onChange={(v) => setForm({ ...form, alumnoId: v })}
             placeholder="Buscar alumno..."
           />
-          <select value={form.cursoId} onChange={(e) => setForm({ ...form, cursoId: e.target.value })}>
+          <select value={form.cursoId} onChange={(e) => setForm({ ...form, cursoId: e.target.value, seccionId: '' })}>
             <option value="">Curso...</option>
             {cursos.map((c) => <option key={c.id} value={c.id}>{nombreCurso(c.id)}</option>)}
           </select>
+          {seccionesDelCurso.length > 0 && (
+            <select value={form.seccionId} onChange={(e) => setForm({ ...form, seccionId: e.target.value })}>
+              <option value="">Sección (opcional)...</option>
+              {seccionesDelCurso.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+            </select>
+          )}
           <select value={form.turnoId} onChange={(e) => setForm({ ...form, turnoId: e.target.value })}>
             <option value="">Turno...</option>
             {turnos.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
@@ -681,13 +730,14 @@ function InscripcionesView({ role }) {
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th>Alumno</th><th>Curso</th><th>Turno</th><th>Activo</th>{puedeEscribir && <th>Acciones</th>}</tr>
+            <tr><th>Alumno</th><th>Curso</th><th>Sección</th><th>Turno</th><th>Activo</th>{puedeEscribir && <th>Acciones</th>}</tr>
           </thead>
           <tbody>
             {inscripciones.map((i) => (
               <tr key={i.id}>
                 <td>{nombreAlumno(i.alumnoId)}</td>
                 <td>{nombreCurso(i.cursoId)}</td>
+                <td>{nombreSeccion(i.seccionId)}</td>
                 <td>{nombreTurno(i.turnoId)}</td>
                 <td>{i.activo ? 'Sí' : 'No'}</td>
                 {puedeEscribir && (
@@ -695,7 +745,7 @@ function InscripcionesView({ role }) {
                 )}
               </tr>
             ))}
-            {inscripciones.length === 0 && <tr><td colSpan={5} className="empty">Sin inscripciones todavía.</td></tr>}
+            {inscripciones.length === 0 && <tr><td colSpan={6} className="empty">Sin inscripciones todavía.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -1051,8 +1101,13 @@ function AsistenciaView({ usuario, role }) {
     if (!claseId) { setAlumnosClase([]); return; }
     const clase = clases.find((c) => c.id === claseId);
     if (!clase) return;
-    db.collection('inscripciones')
-      .where('cursoId', '==', clase.cursoId).where('turnoId', '==', clase.turnoId).where('activo', '==', true)
+    // Si la Clase tiene Sección asignada, solo entran los alumnos
+    // inscriptos en esa Sección; si no tiene (clase vieja o Curso sin
+    // secciones), entran todos los del Curso+Turno como antes.
+    let query = db.collection('inscripciones')
+      .where('cursoId', '==', clase.cursoId).where('turnoId', '==', clase.turnoId).where('activo', '==', true);
+    if (clase.seccionId) query = query.where('seccionId', '==', clase.seccionId);
+    query
       .get()
       .then((snap) => {
         const insc = snap.docs.map((d) => d.data());
@@ -1161,8 +1216,10 @@ function NotasView({ usuario, role }) {
     if (role === ROLES.ALUMNO || !claseId) { setAlumnosClase([]); return; }
     const clase = clases.find((c) => c.id === claseId);
     if (!clase) return;
-    db.collection('inscripciones')
-      .where('cursoId', '==', clase.cursoId).where('turnoId', '==', clase.turnoId).where('activo', '==', true)
+    let query = db.collection('inscripciones')
+      .where('cursoId', '==', clase.cursoId).where('turnoId', '==', clase.turnoId).where('activo', '==', true);
+    if (clase.seccionId) query = query.where('seccionId', '==', clase.seccionId);
+    query
       .get()
       .then((snap) => {
         const insc = snap.docs.map((d) => d.data());
@@ -1501,6 +1558,7 @@ function VistaActual({ vista, usuario }) {
     case 'agenda': return <AgendaView />;
     case 'carreras': return <CarrerasView role={role} />;
     case 'cursos': return <CursosView role={role} />;
+    case 'secciones': return <SeccionesView role={role} />;
     case 'turnos': return <TurnosView role={role} />;
     case 'salas': return <SalasView role={role} />;
     case 'cocinas': return <CocinasView role={role} />;
