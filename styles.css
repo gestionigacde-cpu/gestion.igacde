@@ -200,6 +200,8 @@ th, td {
 
 th { color: var(--color-text-muted); font-weight: 600; }
 
+tr.row-editing { background: #fbf1e6; }
+
 td.actions, td.empty { white-space: nowrap; }
 
 .empty { text-align: center; color: var(--color-text-muted); padding: 24px; }

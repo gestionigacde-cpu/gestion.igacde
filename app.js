@@ -18,7 +18,7 @@
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.4.1';
 
 const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete', 'vaina'];
 
@@ -661,7 +661,9 @@ function InscripcionesView({ role }) {
   const [cursos] = useCollection('cursos', null, []);
   const [secciones] = useCollection('secciones', null, []);
   const [turnos] = useCollection('turnos', null, []);
-  const [form, setForm] = useState({ alumnoId: '', cursoId: '', seccionId: '', turnoId: '' });
+  const formVacio = { alumnoId: '', cursoId: '', seccionId: '', turnoId: '' };
+  const [form, setForm] = useState(formVacio);
+  const [editingId, setEditingId] = useState(null);
   const puedeEscribir = canWrite('inscripciones', role);
 
   const alumnoOptions = alumnos
@@ -669,23 +671,52 @@ function InscripcionesView({ role }) {
     .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''))
     .map((a) => ({ value: a.id, label: a.documento ? `${a.nombre} (${a.documento})` : a.nombre }));
 
-  const nombreAlumno = (id) => (alumnos.find((a) => a.id === id) || {}).nombre || id;
+  const nombreAlumno = (id) => (alumnos.find((a) => a.id === id) || {}).nombre || (id ? '(alumno no encontrado)' : '—');
   const nombreCurso = (id) => {
+    if (!id) return '—';
     const curso = cursos.find((c) => c.id === id);
-    if (!curso) return id;
+    if (!curso) return '⚠ Curso no encontrado';
     const carrera = carreras.find((c) => c.id === curso.carreraId);
     return carrera ? `${carrera.nombre} - ${curso.nombre}` : curso.nombre;
   };
-  const nombreSeccion = (id) => (id ? (secciones.find((s) => s.id === id) || {}).nombre || id : '—');
-  const nombreTurno = (id) => (turnos.find((t) => t.id === id) || {}).nombre || id;
+  const nombreSeccion = (id) => {
+    if (!id) return '—';
+    const s = secciones.find((s) => s.id === id);
+    return s ? s.nombre : '⚠ Sección no encontrada';
+  };
+  const nombreTurno = (id) => {
+    if (!id) return '—';
+    const t = turnos.find((t) => t.id === id);
+    return t ? t.nombre : '⚠ Turno no encontrado';
+  };
   const seccionesDelCurso = secciones.filter((s) => s.cursoId === form.cursoId);
 
-  async function inscribir(e) {
+  function empezarEdicion(insc) {
+    setEditingId(insc.id);
+    setForm({
+      alumnoId: insc.alumnoId || '', cursoId: insc.cursoId || '',
+      seccionId: insc.seccionId || '', turnoId: insc.turnoId || '',
+    });
+  }
+
+  function cancelarEdicion() {
+    setEditingId(null);
+    setForm(formVacio);
+  }
+
+  async function guardar(e) {
     e.preventDefault();
     if (!form.alumnoId || !form.cursoId || !form.turnoId) return alert('Completá alumno, curso y turno.');
     try {
-      await db.collection('inscripciones').add({ ...form, activo: true, fechaAlta: firebase.firestore.FieldValue.serverTimestamp() });
-      setForm({ alumnoId: '', cursoId: '', seccionId: '', turnoId: '' });
+      if (editingId) {
+        await db.collection('inscripciones').doc(editingId).update({
+          alumnoId: form.alumnoId, cursoId: form.cursoId, seccionId: form.seccionId || '', turnoId: form.turnoId,
+        });
+        setEditingId(null);
+      } else {
+        await db.collection('inscripciones').add({ ...form, activo: true, fechaAlta: firebase.firestore.FieldValue.serverTimestamp() });
+      }
+      setForm(formVacio);
     } catch (err) {
       alert('Error: ' + err.message);
     }
@@ -703,7 +734,7 @@ function InscripcionesView({ role }) {
     <div className="view">
       <h2>Inscripciones</h2>
       {puedeEscribir && (
-        <form className="form form-inline" onSubmit={inscribir}>
+        <form className="form form-inline" onSubmit={guardar}>
           <AutocompleteSelect
             options={alumnoOptions}
             value={form.alumnoId}
@@ -724,7 +755,8 @@ function InscripcionesView({ role }) {
             <option value="">Turno...</option>
             {turnos.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
           </select>
-          <button className="btn btn-primary" type="submit">Inscribir</button>
+          <button className="btn btn-primary" type="submit">{editingId ? 'Guardar cambios' : 'Inscribir'}</button>
+          {editingId && <button className="btn" type="button" onClick={cancelarEdicion}>Cancelar edición</button>}
         </form>
       )}
       <div className="table-wrap">
@@ -734,14 +766,17 @@ function InscripcionesView({ role }) {
           </thead>
           <tbody>
             {inscripciones.map((i) => (
-              <tr key={i.id}>
+              <tr key={i.id} className={editingId === i.id ? 'row-editing' : ''}>
                 <td>{nombreAlumno(i.alumnoId)}</td>
                 <td>{nombreCurso(i.cursoId)}</td>
                 <td>{nombreSeccion(i.seccionId)}</td>
                 <td>{nombreTurno(i.turnoId)}</td>
                 <td>{i.activo ? 'Sí' : 'No'}</td>
                 {puedeEscribir && (
-                  <td><button className="btn-icon" onClick={() => toggleActivo(i)} type="button">{i.activo ? 'Dar de baja' : 'Reactivar'}</button></td>
+                  <td className="actions">
+                    <button className="btn-icon" onClick={() => empezarEdicion(i)} type="button">Editar</button>
+                    <button className="btn-icon" onClick={() => toggleActivo(i)} type="button">{i.activo ? 'Dar de baja' : 'Reactivar'}</button>
+                  </td>
                 )}
               </tr>
             ))}

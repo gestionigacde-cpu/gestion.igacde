@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.1 - Editar Inscripciones
+- La tabla de **Inscripciones** ahora tiene botón **Editar** por fila: reabre el mismo formulario de arriba con los datos cargados, permite corregir Alumno/Curso/Sección/Turno y guardar los cambios (antes solo se podía dar de baja/reactivar).
+- Si una Inscripción quedó con un Curso, Sección o Turno que ya no existe (por ejemplo, un ID mal cargado desde un seed), la tabla ahora lo marca claramente como "⚠ ... no encontrado/a" en vez de mostrar el ID en crudo — así es fácil detectar qué filas hay que corregir con el nuevo botón Editar.
+- No requiere cambios en `firestore.rules` ni republicar nada en Firebase Console.
+
 ## v0.4.0 - Secciones (subdivisión de Curso)
 - Nueva entidad **Secciones**: subdivisión de un Curso cuando hay más de un grupo cursando lo mismo (ej: "1er Curso Sección A", "Sección B"), sin límite de cantidad.
 - Independiente del Turno: varias Secciones pueden compartir el mismo horario (mismo Curso+Turno, distinto docente/aula/cocina).
