@@ -18,7 +18,7 @@
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.4.3';
+const APP_VERSION = '0.4.4';
 
 const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete', 'vaina'];
 
@@ -589,6 +589,15 @@ function AgendaView() {
   const cocinasActivas = cocinas.filter((c) => c.activo !== false);
   const columnas = cocinasActivas.length > 0 ? cocinasActivas : [null];
 
+  // Orden lógico de filas (no alfabético ni por fecha de carga): Mañana,
+  // Tarde, Noche primero, y cualquier otro turno (ej: Sábado) al final.
+  const ORDEN_TURNOS = ['mañana', 'tarde', 'noche'];
+  const rankTurno = (nombre) => {
+    const idx = ORDEN_TURNOS.indexOf((nombre || '').trim().toLowerCase());
+    return idx === -1 ? ORDEN_TURNOS.length : idx;
+  };
+  const turnosOrdenados = turnos.slice().sort((a, b) => rankTurno(a.nombre) - rankTurno(b.nombre) || (a.nombre || '').localeCompare(b.nombre || ''));
+
   return (
     <div className="view">
       <div className="view-header">
@@ -624,7 +633,7 @@ function AgendaView() {
             </tr>
           </thead>
           <tbody>
-            {turnos.map((turno) => (
+            {turnosOrdenados.map((turno) => (
               <tr key={turno.id}>
                 <th className="agenda-turno-label">{turno.nombre}</th>
                 {dias.map((d) => {

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.4 - Orden de Turnos en la Agenda
+- Las filas de la **Agenda** ahora siguen un orden fijo y lógico: Mañana, Tarde, Noche, y cualquier otro Turno (ej: Sábado) al final — antes se mostraban en el orden en que se habían cargado los Turnos, sin ningún criterio.
+- No requiere cambios en `firestore.rules` ni republicar nada en Firebase Console.
+
 ## v0.4.3 - Encontrar planificaciones ya guardadas
 - El desplegable de Clase en **Planificación semanal** ahora marca con "✓" las clases que ya tienen una planificación guardada, para encontrarlas fácil y modificarlas (antes había que elegir clase por clase para saber cuál ya estaba planificada).
 - Al elegir una clase, un mensaje aclara si ya tenía planificación guardada o si es nueva.
