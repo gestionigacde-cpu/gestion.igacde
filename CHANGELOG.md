@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.3 - Encontrar planificaciones ya guardadas
+- El desplegable de Clase en **Planificación semanal** ahora marca con "✓" las clases que ya tienen una planificación guardada, para encontrarlas fácil y modificarlas (antes había que elegir clase por clase para saber cuál ya estaba planificada).
+- Al elegir una clase, un mensaje aclara si ya tenía planificación guardada o si es nueva.
+- Recordatorio de cómo editar una planificación existente: elegí la clase (con el "✓") en el desplegable — los grupos guardados se cargan solos, los modificás y le das "Guardar planificación" de nuevo (sobreescribe lo anterior, no crea uno nuevo).
+- No requiere cambios en `firestore.rules` ni republicar nada en Firebase Console.
+
 ## v0.4.2 - Corrección: columna Sección en Clases mostraba el ID
 - En la tabla de **Clases**, la columna "Sección (opcional)" mostraba el ID en crudo en vez del nombre (ej: "0TfJZdj37Lq9ebv1LobR" en vez de "A"). Ahora muestra el nombre correctamente, y si la Sección no existe muestra "⚠ no encontrado" en vez del ID.
 - Esta corrección aplica a cualquier columna de tipo selección que dependa de otro campo (por ahora, Sección en Clases); antes solo funcionaba para columnas con opciones fijas (Curso, Turno, Sala, Cocina, Docente).

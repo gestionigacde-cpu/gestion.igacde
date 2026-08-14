@@ -18,7 +18,7 @@
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.4.2';
+const APP_VERSION = '0.4.3';
 
 const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete', 'vaina'];
 
@@ -918,19 +918,29 @@ function RecetasView({ role }) {
 function PlanificacionView({ usuario, role }) {
   const [clases] = useCollection('clases', null, []);
   const [recetas] = useCollection('recetas', null, []);
+  const [planificaciones] = useCollection('planificaciones', null, []);
   const [claseId, setClaseId] = useState('');
   const [grupos, setGrupos] = useState([]);
   const [cargando, setCargando] = useState(false);
+  const [yaExistia, setYaExistia] = useState(false);
 
   const clasesVisibles = (role === ROLES.DOCENTE ? clases.filter((c) => c.docenteId === usuario.docenteId) : clases)
     .slice()
     .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
 
+  // Clases que ya tienen al menos un grupo planificado, para marcarlas en
+  // el desplegable y así encontrar fácil "lo que ya se planificó".
+  const idsConPlanificacion = new Set(
+    planificaciones.filter((p) => (p.grupos || []).length > 0).map((p) => p.id)
+  );
+
   useEffect(() => {
-    if (!claseId) { setGrupos([]); return; }
+    if (!claseId) { setGrupos([]); setYaExistia(false); return; }
     setCargando(true);
     db.collection('planificaciones').doc(claseId).get().then((snap) => {
-      setGrupos(snap.exists ? snap.data().grupos || [] : []);
+      const gruposExistentes = snap.exists ? snap.data().grupos || [] : [];
+      setGrupos(gruposExistentes);
+      setYaExistia(gruposExistentes.length > 0);
       setCargando(false);
     });
   }, [claseId]);
@@ -950,6 +960,7 @@ function PlanificacionView({ usuario, role }) {
         grupos: gruposLimpios,
         actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
       });
+      setYaExistia(gruposLimpios.length > 0);
       alert('Planificación guardada.');
     } catch (err) {
       alert('Error al guardar: ' + err.message);
@@ -964,13 +975,21 @@ function PlanificacionView({ usuario, role }) {
         <label>Clase
           <select value={claseId} onChange={(e) => setClaseId(e.target.value)}>
             <option value="">Elegir clase...</option>
-            {clasesVisibles.map((c) => <option key={c.id} value={c.id}>{c.fecha ? `${c.fecha} — ` : ''}{c.nombre}</option>)}
+            {clasesVisibles.map((c) => (
+              <option key={c.id} value={c.id}>
+                {idsConPlanificacion.has(c.id) ? '✓ ' : ''}{c.fecha ? `${c.fecha} — ` : ''}{c.nombre}
+              </option>
+            ))}
           </select>
+          <span className="muted">✓ = ya tiene planificación guardada</span>
         </label>
       </div>
 
       {claseId && !cargando && (
         <div className="grupos-editor">
+          <p className="muted">
+            {yaExistia ? 'Esta clase ya tiene una planificación guardada — modificá lo que haga falta y volvé a guardar.' : 'Esta clase todavía no tiene planificación.'}
+          </p>
           <div className="view-header"><strong>Grupos</strong><button className="btn" onClick={addGrupo} type="button">+ Agregar grupo</button></div>
           {grupos.map((g, i) => (
             <div className="grupo-row" key={i}>
