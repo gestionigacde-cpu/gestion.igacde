@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.2 - Corrección: columna Sección en Clases mostraba el ID
+- En la tabla de **Clases**, la columna "Sección (opcional)" mostraba el ID en crudo en vez del nombre (ej: "0TfJZdj37Lq9ebv1LobR" en vez de "A"). Ahora muestra el nombre correctamente, y si la Sección no existe muestra "⚠ no encontrado" en vez del ID.
+- Esta corrección aplica a cualquier columna de tipo selección que dependa de otro campo (por ahora, Sección en Clases); antes solo funcionaba para columnas con opciones fijas (Curso, Turno, Sala, Cocina, Docente).
+- No requiere cambios en `firestore.rules` ni republicar nada en Firebase Console.
+
 ## v0.4.1 - Editar Inscripciones
 - La tabla de **Inscripciones** ahora tiene botón **Editar** por fila: reabre el mismo formulario de arriba con los datos cargados, permite corregir Alumno/Curso/Sección/Turno y guardar los cambios (antes solo se podía dar de baja/reactivar).
 - Si una Inscripción quedó con un Curso, Sección o Turno que ya no existe (por ejemplo, un ID mal cargado desde un seed), la tabla ahora lo marca claramente como "⚠ ... no encontrado/a" en vez de mostrar el ID en crudo — así es fácil detectar qué filas hay que corregir con el nuevo botón Editar.

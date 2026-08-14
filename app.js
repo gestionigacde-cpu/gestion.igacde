@@ -18,7 +18,7 @@
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.4.1';
+const APP_VERSION = '0.4.2';
 
 const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete', 'vaina'];
 
@@ -277,11 +277,16 @@ function FormField({ field, value, onChange, form }) {
   );
 }
 
-function renderCellValue(val, field) {
+function renderCellValue(val, field, item) {
   if (field.type === 'checkbox') return val ? 'Sí' : 'No';
-  if (field.type === 'select' && field.options) {
-    const opt = field.options.find((o) => o.value === val);
-    return opt ? opt.label : val;
+  if (field.type === 'select') {
+    // dynamicOptions (ej: Sección, que depende del Curso): se calcula
+    // usando la fila entera como "form", porque comparte la misma clave
+    // (cursoId) que usa el select en el formulario de alta/edición.
+    const opts = field.dynamicOptions ? field.dynamicOptions(item || {}) : (field.options || []);
+    if (!val) return '—';
+    const opt = opts.find((o) => o.value === val);
+    return opt ? opt.label : '⚠ no encontrado';
   }
   return val;
 }
@@ -373,7 +378,7 @@ function CrudTable({ title, collectionName, fields, role, extraDefault, filterFn
           <tbody>
             {visibles.map((item) => (
               <tr key={item.id}>
-                {fields.map((f) => <td key={f.key}>{renderCellValue(item[f.key], f)}</td>)}
+                {fields.map((f) => <td key={f.key}>{renderCellValue(item[f.key], f, item)}</td>)}
                 {puedeEscribir && (
                   <td className="actions">
                     <button className="btn-icon" onClick={() => openEdit(item)} type="button">Editar</button>
