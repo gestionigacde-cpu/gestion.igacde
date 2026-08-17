@@ -18,7 +18,7 @@
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.5.1';
 
 const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete', 'vaina'];
 
@@ -675,7 +675,8 @@ function InscripcionesView({ role }) {
   const [cursos] = useCollection('cursos', null, []);
   const [secciones] = useCollection('secciones', null, []);
   const [turnos] = useCollection('turnos', null, []);
-  const formVacio = { alumnoId: '', cursoId: '', seccionId: '', turnoId: '' };
+  const anioActual = new Date().getFullYear();
+  const formVacio = { alumnoId: '', cursoId: '', seccionId: '', turnoId: '', anioLectivo: String(anioActual) };
   const [form, setForm] = useState(formVacio);
   const [editingId, setEditingId] = useState(null);
   const puedeEscribir = canWrite('inscripciones', role);
@@ -710,6 +711,7 @@ function InscripcionesView({ role }) {
     setForm({
       alumnoId: insc.alumnoId || '', cursoId: insc.cursoId || '',
       seccionId: insc.seccionId || '', turnoId: insc.turnoId || '',
+      anioLectivo: insc.anioLectivo || String(anioActual),
     });
   }
 
@@ -721,10 +723,12 @@ function InscripcionesView({ role }) {
   async function guardar(e) {
     e.preventDefault();
     if (!form.alumnoId || !form.cursoId || !form.turnoId) return alert('Completá alumno, curso y turno.');
+    if (!/^\d{4}$/.test(String(form.anioLectivo || ''))) return alert('Poné un Año lectivo válido (ej: 2026).');
     try {
       if (editingId) {
         await db.collection('inscripciones').doc(editingId).update({
           alumnoId: form.alumnoId, cursoId: form.cursoId, seccionId: form.seccionId || '', turnoId: form.turnoId,
+          anioLectivo: form.anioLectivo,
         });
         setEditingId(null);
       } else {
@@ -769,6 +773,13 @@ function InscripcionesView({ role }) {
             <option value="">Turno...</option>
             {turnos.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
           </select>
+          <input
+            type="number"
+            placeholder="Año lectivo"
+            value={form.anioLectivo}
+            onChange={(e) => setForm({ ...form, anioLectivo: e.target.value })}
+            min="2000" max="2100" style={{ width: '110px' }}
+          />
           <button className="btn btn-primary" type="submit">{editingId ? 'Guardar cambios' : 'Inscribir'}</button>
           {editingId && <button className="btn" type="button" onClick={cancelarEdicion}>Cancelar edición</button>}
         </form>
@@ -776,7 +787,7 @@ function InscripcionesView({ role }) {
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th>Alumno</th><th>Curso</th><th>Sección</th><th>Turno</th><th>Activo</th>{puedeEscribir && <th>Acciones</th>}</tr>
+            <tr><th>Alumno</th><th>Curso</th><th>Sección</th><th>Turno</th><th>Año lectivo</th><th>Activo</th>{puedeEscribir && <th>Acciones</th>}</tr>
           </thead>
           <tbody>
             {inscripciones.map((i) => (
@@ -785,6 +796,7 @@ function InscripcionesView({ role }) {
                 <td>{nombreCurso(i.cursoId)}</td>
                 <td>{nombreSeccion(i.seccionId)}</td>
                 <td>{nombreTurno(i.turnoId)}</td>
+                <td>{i.anioLectivo || '—'}</td>
                 <td>{i.activo ? 'Sí' : 'No'}</td>
                 {puedeEscribir && (
                   <td className="actions">
@@ -794,7 +806,7 @@ function InscripcionesView({ role }) {
                 )}
               </tr>
             ))}
-            {inscripciones.length === 0 && <tr><td colSpan={6} className="empty">Sin inscripciones todavía.</td></tr>}
+            {inscripciones.length === 0 && <tr><td colSpan={7} className="empty">Sin inscripciones todavía.</td></tr>}
           </tbody>
         </table>
       </div>

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.5.1 - Año lectivo en Inscripciones
+- Nuevo campo **Año lectivo** (obligatorio) al inscribir un Alumno, con el año actual puesto por defecto. Se muestra como columna en la tabla y se puede editar con el botón "Editar".
+- Sirve para distinguir, por ejemplo, si un Alumno repite el mismo Curso+Sección+Turno en otro año.
+- No requiere cambios en `firestore.rules` ni republicar nada en Firebase Console.
+
+### Migración de datos ya cargados (importante)
+1. Las **Inscripciones** viejas no tienen Año lectivo — van a mostrar "—" en esa columna hasta que las corrijas con "Editar".
+
 ## v0.5.0 - Carrera en Recetas + buscador
 - Al crear o editar una **Receta** ahora hay que elegir a qué **Carrera** pertenece (obligatorio para recetas nuevas). Se muestra en cada tarjeta ("Pastelería · 4 ingredientes").
 - Nuevo **buscador de recetas** en la vista "Recetas" (filtra por nombre a medida que escribís).
