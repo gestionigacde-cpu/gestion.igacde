@@ -18,7 +18,7 @@
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.4.4';
+const APP_VERSION = '0.5.0';
 
 const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete', 'vaina'];
 
@@ -808,18 +808,25 @@ function InscripcionesView({ role }) {
 function RecetasView({ role }) {
   const [recetas, loading] = useCollection('recetas', null, []);
   const [ingredientesCat] = useCollection('ingredientes', null, []);
+  const [carreras] = useCollection('carreras', null, []);
   const puedeEscribir = canWrite('recetas', role);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [nombre, setNombre] = useState('');
+  const [carreraId, setCarreraId] = useState('');
   const [procedimiento, setProcedimiento] = useState('');
   const [items, setItems] = useState([]);
+  const [busqueda, setBusqueda] = useState('');
+
+  const nombreCarrera = (id) => (id ? (carreras.find((c) => c.id === id) || {}).nombre || '⚠ Carrera no encontrada' : 'Sin carrera asignada');
+
+  const recetasFiltradas = recetas.filter((r) => (r.nombre || '').toLowerCase().includes(busqueda.trim().toLowerCase()));
 
   function openNew() {
-    setNombre(''); setProcedimiento(''); setItems([]); setEditing(null); setModalOpen(true);
+    setNombre(''); setCarreraId(''); setProcedimiento(''); setItems([]); setEditing(null); setModalOpen(true);
   }
   function openEdit(r) {
-    setNombre(r.nombre); setProcedimiento(r.procedimiento || ''); setItems(r.ingredientes || []); setEditing(r); setModalOpen(true);
+    setNombre(r.nombre); setCarreraId(r.carreraId || ''); setProcedimiento(r.procedimiento || ''); setItems(r.ingredientes || []); setEditing(r); setModalOpen(true);
   }
   function addIngredienteRow() { setItems([...items, { ingredienteId: '', cantidad: '' }]); }
   function updateRow(i, patch) { setItems(items.map((it, idx) => (idx === i ? { ...it, ...patch } : it))); }
@@ -828,6 +835,7 @@ function RecetasView({ role }) {
   async function guardar(e) {
     e.preventDefault();
     if (!nombre.trim()) return alert('Poné un nombre.');
+    if (!carreraId) return alert('Elegí a qué Carrera pertenece esta receta.');
     const ingredientesLimpios = items
       .filter((it) => it.ingredienteId && it.cantidad)
       .map((it) => {
@@ -839,7 +847,7 @@ function RecetasView({ role }) {
           cantidad: Number(it.cantidad),
         };
       });
-    const data = { nombre: nombre.trim(), procedimiento, ingredientes: ingredientesLimpios };
+    const data = { nombre: nombre.trim(), carreraId, procedimiento, ingredientes: ingredientesLimpios };
     try {
       if (editing) await db.collection('recetas').doc(editing.id).update(data);
       else await db.collection('recetas').add({ ...data, creadoEn: firebase.firestore.FieldValue.serverTimestamp() });
@@ -864,13 +872,20 @@ function RecetasView({ role }) {
     <div className="view">
       <div className="view-header">
         <h2>Recetas</h2>
+        <input
+          type="text"
+          className="search-input"
+          placeholder="Buscar receta..."
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+        />
         {puedeEscribir && <button className="btn btn-primary" onClick={openNew} type="button">+ Nueva receta</button>}
       </div>
       <div className="cards-grid">
-        {recetas.map((r) => (
+        {recetasFiltradas.map((r) => (
           <div className="card" key={r.id}>
             <h3>{r.nombre}</h3>
-            <p className="muted">{(r.ingredientes || []).length} ingredientes</p>
+            <p className="muted">{nombreCarrera(r.carreraId)} · {(r.ingredientes || []).length} ingredientes</p>
             <ul className="mini-list">
               {(r.ingredientes || []).slice(0, 4).map((ing, i) => <li key={i}>{ing.nombre}: {ing.cantidad} {ing.unidad}</li>)}
               {(r.ingredientes || []).length > 4 && <li>...</li>}
@@ -884,12 +899,19 @@ function RecetasView({ role }) {
           </div>
         ))}
         {recetas.length === 0 && <p className="empty">Todavía no hay recetas cargadas.</p>}
+        {recetas.length > 0 && recetasFiltradas.length === 0 && <p className="empty">Ninguna receta coincide con la búsqueda.</p>}
       </div>
 
       {modalOpen && (
         <Modal title={editing ? 'Editar receta' : 'Nueva receta'} onClose={() => setModalOpen(false)} wide>
           <form onSubmit={guardar} className="form">
             <label>Nombre<input value={nombre} onChange={(e) => setNombre(e.target.value)} required /></label>
+            <label>Carrera
+              <select value={carreraId} onChange={(e) => setCarreraId(e.target.value)} required>
+                <option value="">Elegir carrera...</option>
+                {carreras.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </label>
             <label>Procedimiento<textarea value={procedimiento} onChange={(e) => setProcedimiento(e.target.value)} rows={4} /></label>
             <div className="ingredientes-editor">
               <div className="view-header">

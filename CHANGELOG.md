@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.5.0 - Carrera en Recetas + buscador
+- Al crear o editar una **Receta** ahora hay que elegir a qué **Carrera** pertenece (obligatorio para recetas nuevas). Se muestra en cada tarjeta ("Pastelería · 4 ingredientes").
+- Nuevo **buscador de recetas** en la vista "Recetas" (filtra por nombre a medida que escribís).
+- Se agregó `fix-carrera-recetas.js`: script de consola para asignar Carrera a las recetas que ya estaban cargadas sin ese dato.
+
+### Migración de datos ya cargados (importante)
+1. Las **Recetas** viejas no tienen Carrera — van a mostrar "Sin carrera asignada" en la tarjeta hasta que las corrijas.
+2. Corré `fix-carrera-recetas.js` en la consola (ver instrucciones dentro del archivo) para asignarlas todas a una Carrera de una sola vez, o editalas una por una desde "Recetas".
+3. No requiere cambios en `firestore.rules` ni republicar nada en Firebase Console.
+
 ## v0.4.4 - Orden de Turnos en la Agenda
 - Las filas de la **Agenda** ahora siguen un orden fijo y lógico: Mañana, Tarde, Noche, y cualquier otro Turno (ej: Sábado) al final — antes se mostraban en el orden en que se habían cargado los Turnos, sin ningún criterio.
 - No requiere cambios en `firestore.rules` ni republicar nada en Firebase Console.
