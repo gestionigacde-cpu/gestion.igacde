@@ -18,9 +18,9 @@
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.5.2';
+const APP_VERSION = '0.5.3';
 
-const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete', 'vaina'];
+const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete', 'vaina', 'frasco', 'rodaja', 'bandeja'];
 
 const DIAS_CORTOS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];

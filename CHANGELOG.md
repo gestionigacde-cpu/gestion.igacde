@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.5.3 - Nuevas unidades + seeds de Pastelería
+- Se agregaron las unidades **frasco**, **rodaja** y **bandeja** al desplegable de Ingredientes (aparecen en algunas de las recetas reales importadas).
+- Se agregaron `seed-ingredientes-pasteleria.js` y `seed-recetas-pasteleria.js`: scripts de consola para cargar 70 ingredientes y 28 recetas extraídos de las planillas reales de Clase 1 a 6 (hoja DOCENTE), todas asignadas a la Carrera Pastelería. Correr primero el de ingredientes, después el de recetas.
+- No requiere cambios en `firestore.rules` ni republicar nada en Firebase Console.
+
 ## v0.5.2 - Filtros en Inscripciones
 - Nueva barra de filtros en **Inscripciones**: Curso, Sección (se acota sola según el Curso elegido), Turno, Año lectivo y Activo. Se pueden combinar, y hay un botón "Limpiar filtros" cuando hay alguno aplicado.
 - No requiere cambios en `firestore.rules` ni republicar nada en Firebase Console.
