@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.2 - Filtros en Inscripciones
+- Nueva barra de filtros en **Inscripciones**: Curso, Sección (se acota sola según el Curso elegido), Turno, Año lectivo y Activo. Se pueden combinar, y hay un botón "Limpiar filtros" cuando hay alguno aplicado.
+- No requiere cambios en `firestore.rules` ni republicar nada en Firebase Console.
+
 ## v0.5.1 - Año lectivo en Inscripciones
 - Nuevo campo **Año lectivo** (obligatorio) al inscribir un Alumno, con el año actual puesto por defecto. Se muestra como columna en la tabla y se puede editar con el botón "Editar".
 - Sirve para distinguir, por ejemplo, si un Alumno repite el mismo Curso+Sección+Turno en otro año.

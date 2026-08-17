@@ -18,7 +18,7 @@
 
 const { useState, useEffect } = React;
 
-const APP_VERSION = '0.5.1';
+const APP_VERSION = '0.5.2';
 
 const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'atado', 'paquete', 'vaina'];
 
@@ -681,6 +681,10 @@ function InscripcionesView({ role }) {
   const [editingId, setEditingId] = useState(null);
   const puedeEscribir = canWrite('inscripciones', role);
 
+  const filtroVacio = { cursoId: '', seccionId: '', turnoId: '', anioLectivo: '', activo: '' };
+  const [filtro, setFiltro] = useState(filtroVacio);
+  const hayFiltrosActivos = Object.values(filtro).some((v) => v !== '');
+
   const alumnoOptions = alumnos
     .slice()
     .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''))
@@ -705,6 +709,24 @@ function InscripcionesView({ role }) {
     return t ? t.nombre : '⚠ Turno no encontrado';
   };
   const seccionesDelCurso = secciones.filter((s) => s.cursoId === form.cursoId);
+
+  // Opciones de Sección para el filtro: si hay un Curso elegido en el
+  // filtro se acota a ese Curso; si no, se muestran todas.
+  const seccionesParaFiltro = filtro.cursoId ? secciones.filter((s) => s.cursoId === filtro.cursoId) : secciones;
+
+  // Años lectivos presentes en los datos ya cargados, para armar el
+  // desplegable del filtro sin tener que tipearlo.
+  const aniosDisponibles = Array.from(new Set(inscripciones.map((i) => i.anioLectivo).filter(Boolean))).sort((a, b) => b.localeCompare(a));
+
+  const inscripcionesFiltradas = inscripciones.filter((i) => {
+    if (filtro.cursoId && i.cursoId !== filtro.cursoId) return false;
+    if (filtro.seccionId && i.seccionId !== filtro.seccionId) return false;
+    if (filtro.turnoId && i.turnoId !== filtro.turnoId) return false;
+    if (filtro.anioLectivo && i.anioLectivo !== filtro.anioLectivo) return false;
+    if (filtro.activo === 'si' && !i.activo) return false;
+    if (filtro.activo === 'no' && i.activo) return false;
+    return true;
+  });
 
   function empezarEdicion(insc) {
     setEditingId(insc.id);
@@ -784,13 +806,49 @@ function InscripcionesView({ role }) {
           {editingId && <button className="btn" type="button" onClick={cancelarEdicion}>Cancelar edición</button>}
         </form>
       )}
+
+      <div className="filters">
+        <label>Curso
+          <select value={filtro.cursoId} onChange={(e) => setFiltro({ ...filtro, cursoId: e.target.value, seccionId: '' })}>
+            <option value="">Todos</option>
+            {cursos.map((c) => <option key={c.id} value={c.id}>{nombreCurso(c.id)}</option>)}
+          </select>
+        </label>
+        <label>Sección
+          <select value={filtro.seccionId} onChange={(e) => setFiltro({ ...filtro, seccionId: e.target.value })}>
+            <option value="">Todas</option>
+            {seccionesParaFiltro.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          </select>
+        </label>
+        <label>Turno
+          <select value={filtro.turnoId} onChange={(e) => setFiltro({ ...filtro, turnoId: e.target.value })}>
+            <option value="">Todos</option>
+            {turnos.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+          </select>
+        </label>
+        <label>Año lectivo
+          <select value={filtro.anioLectivo} onChange={(e) => setFiltro({ ...filtro, anioLectivo: e.target.value })}>
+            <option value="">Todos</option>
+            {aniosDisponibles.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </label>
+        <label>Activo
+          <select value={filtro.activo} onChange={(e) => setFiltro({ ...filtro, activo: e.target.value })}>
+            <option value="">Todos</option>
+            <option value="si">Sí</option>
+            <option value="no">No</option>
+          </select>
+        </label>
+        {hayFiltrosActivos && <button className="btn" type="button" onClick={() => setFiltro(filtroVacio)}>Limpiar filtros</button>}
+      </div>
+
       <div className="table-wrap">
         <table>
           <thead>
             <tr><th>Alumno</th><th>Curso</th><th>Sección</th><th>Turno</th><th>Año lectivo</th><th>Activo</th>{puedeEscribir && <th>Acciones</th>}</tr>
           </thead>
           <tbody>
-            {inscripciones.map((i) => (
+            {inscripcionesFiltradas.map((i) => (
               <tr key={i.id} className={editingId === i.id ? 'row-editing' : ''}>
                 <td>{nombreAlumno(i.alumnoId)}</td>
                 <td>{nombreCurso(i.cursoId)}</td>
@@ -807,6 +865,7 @@ function InscripcionesView({ role }) {
               </tr>
             ))}
             {inscripciones.length === 0 && <tr><td colSpan={7} className="empty">Sin inscripciones todavía.</td></tr>}
+            {inscripciones.length > 0 && inscripcionesFiltradas.length === 0 && <tr><td colSpan={7} className="empty">Ninguna inscripción coincide con los filtros.</td></tr>}
           </tbody>
         </table>
       </div>
